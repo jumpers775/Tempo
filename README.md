@@ -22,6 +22,6 @@ This bot features the following:
 - [X] Youtube Playback
 - [X] Song queue 
 - [X] A way to stop all playback
-- [] A way to manipulate the queue
-- [] Better message formatting (embeds)
-- [] Auto updates or update notifier
+- [ ] A way to manipulate the queue
+- [ ] Better message formatting (embeds)
+- [ ] Auto updates or update notifier
