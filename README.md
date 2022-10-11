@@ -7,7 +7,7 @@ to install the dependencies run:
 
 ## Running the bot
 
-The bot will prompt you for a token, supply your bot token to it, and it will run. run $sync to sync the command tree to all servers this bot is in, and then the slash commands should be visible within dicords ui.
+The bot will prompt you for a token, supply your bot token to it, and it will run. run `$sync` to sync the command tree to all servers this bot is in, and then the slash commands should be visible within dicords ui.
 
 ## Updating
 
