@@ -3,7 +3,7 @@
 
 ## dependencies
 to install the dependencies run:
-`pip install pynacl discord asyncio youtube_search youtube_dl python-dotenv`
+`pip install pynacl discord asyncio youtube_search youtube-dl python-dotenv`
 
 ## Running the bot
 
@@ -23,5 +23,9 @@ This bot features the following:
 - [X] Song queue 
 - [X] A way to stop all playback
 - [ ] A way to manipulate the queue
-- [ ] Better message formatting (embeds)
-- [ ] Auto updates or update notifier
+    - [ ] Queue additions
+    - [ ] Move songs around
+    - [X] Delete songs 
+- [X] Shuffle playback
+- [ ] yt-dlp
+- [ ] Auto updates or update notifications
