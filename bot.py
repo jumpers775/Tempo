@@ -5,7 +5,8 @@ import asyncio
 import youtube_dl
 import dotenv
 import typing
-import os 
+import os
+import random
 from youtube_search import YoutubeSearch
 
 # get token 
@@ -55,9 +56,13 @@ async def sync(ctx: commands.Context, guilds: commands.Greedy[discord.Object], s
 # basic setup
 @bot.event
 async def on_ready():
+    print(f"{bot.user} is online.")
     bot.queue = {}
+    bot.shuffle = {}
     for guild in bot.guilds:
         bot.queue[guild.id] = []
+        bot.shuffle[guild.id] = False
+
 
 #youtube streaming
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -121,7 +126,10 @@ async def play(interaction: discord.Interaction, song:str):
     view = SelectView(options=options, interaction=interaction,results=results)
 
     #select a song
-    await interaction.edit_original_response(content='Select a song to play:',view=view)
+    try:
+        await interaction.edit_original_response(content='Select a song to play:',view=view)
+    except:
+        await interaction.edit_original_response(content='An error occured. Please Try again.')
 
 #view class to select the correct song.
 class SelectView(discord.ui.View):
@@ -143,9 +151,13 @@ class SelectSong(discord.ui.Select):
             if option['title'] == self.values[0][3:]:
                 # set the url
                 url = 'https://www.youtube.com' + option['url_suffix']
-                bot.queue[interaction.guild.id].append(url)
+                # set the title
+                title = option['title']
+                # make queue entry
+                entry = {"url": url,"title": title}
+                bot.queue[interaction.guild.id].append(entry)
                 #check if the new url is the first in the list
-                if not bot.queue[interaction.guild.id][0] is url:
+                if not bot.queue[interaction.guild.id][0]["url"] is url:
                     #if the new url isnt first, reply that it has been added to the queue
                     await self.original_interaction.edit_original_response(content=f"{str(self.values[0])[3:]} has been added to the queue!",view=None)
                     return
@@ -156,15 +168,27 @@ class SelectSong(discord.ui.Select):
                     vc = await interaction.user.voice.channel.connect()
                     #wait for the queue to be empty
                     while len(bot.queue[interaction.guild.id]) > 0:
+                        # choose a song to play
+                        if bot.shuffle[interaction.guild.id]:
+                            play = random.randint(0,len(bot.queue[interaction.guild.id])-1)
+                        else:
+                            play = 0
+                        bot.queue[interaction.guild.id].insert(0,bot.queue[interaction.guild.id].pop(play))
+                        #record what will be played
+                        songname = bot.queue[interaction.guild.id][0]
                         #get a stream
-                        song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0], loop=bot.loop, stream=True)
+                        song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
                         #play the stream
                         vc.play(song)
-                        #wait for the current song to end
+                        #wait for the current song to end or get skipped
                         while vc.is_playing():
+                            if not songname == bot.queue[interaction.guild.id][0]:
+                                vc.stop()
                             await asyncio.sleep(0.1)
-                        #remove the first entry in the queue
-                        bot.queue[interaction.guild.id].pop(0)
+                        #remove the first entry in the queue if not skipped
+                        if len(bot.queue[interaction.guild.id]) > 0:
+                            if songname == bot.queue[interaction.guild.id][0]:
+                                bot.queue[interaction.guild.id].pop(0)
                     #disconnect once the list is empty
                     await vc.disconnect()
 #add the play command to the bots command tree
@@ -187,6 +211,92 @@ async def stop(interaction: discord.Interaction):
 # add the stop command to the commands tree
 bot.tree.add_command(stop)
 
+#build the queue object - behaves as its own nested tree
+queue = discord.app_commands.Group(name='queue', description='queue related commands.')
+
+# show the current queue
+@queue.command(name="view", description='shows the current queue')
+async def view(interaction: discord.Interaction):
+    #build a list of songs
+    #each song is stored as a url, so iterate over them and get info, add it to an embed.
+    response = discord.Embed(title="Queue:", description=f"Shuffle is {'on' if bot.shuffle[interaction.guild.id] else 'off'}", color=0x336EFF)
+    i = 1
+    for song in bot.queue[interaction.guild.id]:
+        response.add_field(name=str(i) + f".{' **(Current song)**' if i == 1 else ''}", value=song["title"], inline=False)
+        i+=1
+    # send response
+    await interaction.response.send_message(embed=response)
+
+#remove a song from the queue
+@queue.command(name="del", description='removes a song from the queue')
+async def view(interaction: discord.Interaction, spot: int):
+    #1 is subtracted as 1 is added when the queue is veiwed to avoid starting at 0.
+    spot-=1
+    # make sure songs are playing
+    if len(bot.queue[interaction.guild.id]) > 0:
+        #make sure the int provided is valid. 
+        if len(bot.queue[interaction.guild.id]) >= spot and spot > 0:
+            # record title to tell user
+            title = bot.queue[interaction.guild.id][spot]["title"]
+            #skip the selected song. 
+            bot.queue[interaction.guild.id].pop(spot)
+            await interaction.response.send_message(f"Removed song #{spot} ({title}) from the queue.")
+        else:
+            await interaction.response.send_message(f"spot {spot} is invalid. Spot cannot be lower than 0 or higher than the number of songs in the queue.")
+    else:
+        await interaction.response.send_message("No songs playing.")
+
+#shuffle
+@queue.command(name="shuffle", description='enables or disables shuffle')
+async def shuffle(interaction: discord.Interaction, mode: str):
+    #set shuffle on
+    if mode == 'on':
+        bot.shuffle[interaction.guild.id] = True
+    #set shuffle off
+    elif mode == 'off':
+        bot.shuffle[interaction.guild.id] = False
+    #if neither on or off error
+    else:
+        await interaction.response.send_message("Mode not recognized. Please use either 'on' or 'off'.")
+        return
+    # tell user what has been done.
+    await interaction.response.send_message(f"Shuffle has been turned {mode}.")
+        
+@shuffle.autocomplete('mode')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    statuses = ['on', 'off']
+    return [
+        discord.app_commands.Choice(name=status, value=status)
+        for status in statuses if current.lower() in status.lower()
+    ]
+
+# add queue to commands tree
+bot.tree.add_command(queue)
+
+
+# skip command
+@discord.app_commands.command(name="skip", description='skips the current song.')
+async def skip(interaction: discord.Interaction):
+    # make sure there is a second song to play after this one
+    if len(bot.queue[interaction.guild.id]) > 1:
+        #record title to inform what was skipped
+        title = bot.queue[interaction.guild.id][0]["title"]
+        # skip the current song
+        bot.queue[interaction.guild.id].pop(0)
+        # tell the user that it was done
+        await interaction.response.send_message(f"Skipped {title}")
+    # if only one song, stop playback altogether
+    elif discord.utils.get(bot.voice_clients, guild=interaction.guild) != None:
+        bot.queue[interaction.guild.id] = []
+        await interaction.guild.voice_client.disconnect()
+        await interaction.response.send_message("Only one song in queue, stopping.")
+    # if neither, no songs are playing
+    else:
+        await interaction.response.send_message("Nothing is playing.")
+bot.tree.add_command(skip)
 
 
 bot.run(token)
