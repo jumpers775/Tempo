@@ -59,9 +59,11 @@ async def on_ready():
     print(f"{bot.user} is online.")
     bot.queue = {}
     bot.shuffle = {}
+    bot.queueorder = {}
     for guild in bot.guilds:
         bot.queue[guild.id] = []
         bot.shuffle[guild.id] = False
+        bot.queueorder[guild.id] = []
 
 
 #youtube streaming
@@ -152,10 +154,17 @@ class SelectSong(discord.ui.Select):
                 # set the url
                 url = 'https://www.youtube.com' + option['url_suffix']
                 # set the title
-                title = option['title']
+                title = option['title']                
                 # make queue entry
                 entry = {"url": url,"title": title}
-                bot.queue[interaction.guild.id].append(entry)
+                #insert in a random spot non-current if shuffle is enabled, at the end if disabled
+                if bot.shuffle[interaction.guild.id] and len(bot.queue[interaction.guild.id]) > 1:
+                    spot = random.randint(1,len(bot.queue[interaction.guild.id]))
+                else:
+                    spot = len(bot.queue[interaction.guild.id])
+                bot.queue[interaction.guild.id].insert(spot, entry)
+                #record the location of this item in case shuffle is turned off
+                bot.queueorder[interaction.guild.id].append(entry)
                 #check if the new url is the first in the list
                 if not bot.queue[interaction.guild.id][0]["url"] is url:
                     #if the new url isnt first, reply that it has been added to the queue
@@ -168,12 +177,6 @@ class SelectSong(discord.ui.Select):
                     vc = await interaction.user.voice.channel.connect()
                     #wait for the queue to be empty
                     while len(bot.queue[interaction.guild.id]) > 0:
-                        # choose a song to play
-                        if bot.shuffle[interaction.guild.id]:
-                            play = random.randint(0,len(bot.queue[interaction.guild.id])-1)
-                        else:
-                            play = 0
-                        bot.queue[interaction.guild.id].insert(0,bot.queue[interaction.guild.id].pop(play))
                         #record what will be played
                         songname = bot.queue[interaction.guild.id][0]
                         #get a stream
@@ -188,7 +191,19 @@ class SelectSong(discord.ui.Select):
                         #remove the first entry in the queue if not skipped
                         if len(bot.queue[interaction.guild.id]) > 0:
                             if songname == bot.queue[interaction.guild.id][0]:
+                                #remove from queue
                                 bot.queue[interaction.guild.id].pop(0)
+                                # if shuffle is enable iterate over ordered list to find song and remove it
+                                if bot.shuffle[interaction.guild.id]:
+                                    spot = 0
+                                    for song in bot.queueorder[interaction.guild.id]:
+                                        if song == songname:
+                                            bot.queueorder[interaction.guild.id].pop(spot)
+                                            break
+                                        else:
+                                            spot+=1
+                                else:
+                                    bot.queueorder[interaction.guild.id].pop(0)
                     #disconnect once the list is empty
                     await vc.disconnect()
 #add the play command to the bots command tree
@@ -252,9 +267,26 @@ async def shuffle(interaction: discord.Interaction, mode: str):
     #set shuffle on
     if mode == 'on':
         bot.shuffle[interaction.guild.id] = True
+        #preserve current song, while randomizing the queue
+        currentsong = bot.queue[interaction.guild.id][0]
+        oldqueue = bot.queue[interaction.guild.id]
+        oldqueue.pop(0)
+        random.shuffle(oldqueue)
+        oldqueue.insert(0,currentsong)
+        bot.queue[interaction.guild.id] = oldqueue
     #set shuffle off
     elif mode == 'off':
         bot.shuffle[interaction.guild.id] = False
+        # set queue back to non-shuffled form.
+        currentsong = bot.queue[interaction.guild.id][0]
+        spot = 0
+        for song in bot.queueorder[interaction.guild.id]:
+            if song == currentsong:
+                bot.queueorder[interaction.guild.id].insert(0,bot.queueorder[interaction.guild.id].pop(spot))
+                break
+            else:
+                spot+=1
+        bot.queue[interaction.guild.id] = bot.queueorder[interaction.guild.id]
     #if neither on or off error
     else:
         await interaction.response.send_message("Mode not recognized. Please use either 'on' or 'off'.")
