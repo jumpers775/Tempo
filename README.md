@@ -22,10 +22,7 @@ This bot features the following:
 - [X] Youtube Playback
 - [X] Song queue 
 - [X] A way to stop all playback
-- [ ] A way to manipulate the queue
-    - [ ] Queue additions
-    - [ ] Move songs around
-    - [X] Delete songs 
+- [X] A way to manipulate the queue
 - [X] Shuffle playback
 - [ ] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
 - [ ] Auto updates or update notifications
