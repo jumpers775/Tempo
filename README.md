@@ -27,5 +27,5 @@ This bot features the following:
     - [ ] Move songs around
     - [X] Delete songs 
 - [X] Shuffle playback
-- [ ] yt-dlp (greatly improves audio quality, howeer randomly drops in connection)
+- [ ] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
 - [ ] Auto updates or update notifications
