@@ -218,6 +218,7 @@ async def stop(interaction: discord.Interaction):
     if vc != None:
         #if it is in a voice channel disconnect, and flush the queue
         bot.queue[interaction.guild.id] = []
+        bot.queueorder[interaction.guild.id] = []
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("Stopped the music.")
     else:
@@ -252,14 +253,53 @@ async def view(interaction: discord.Interaction, spot: int):
         #make sure the int provided is valid. 
         if len(bot.queue[interaction.guild.id]) >= spot and spot > 0:
             # record title to tell user
-            title = bot.queue[interaction.guild.id][spot]["title"]
+            title = bot.queue[interaction.guild.id][spot]
             #skip the selected song. 
             bot.queue[interaction.guild.id].pop(spot)
-            await interaction.response.send_message(f"Removed song #{spot} ({title}) from the queue.")
+            staticspot = 0
+            for song in bot.queueorder[interaction.guild.id]:
+                if song == title:
+                    bot.queueorder[interaction.guild.id].pop(staticspot)
+                    break
+                else:
+                    staticspot+=1
+            await interaction.response.send_message(f"Removed song #{spot+1} ({title['title']}) from the queue.")
         else:
             await interaction.response.send_message(f"spot {spot} is invalid. Spot cannot be lower than 0 or higher than the number of songs in the queue.")
     else:
         await interaction.response.send_message("No songs playing.")
+
+# move in queue
+@queue.command(name="move", description='moves a song to a new spot int the queue')
+async def move(interaction: discord.Interaction, initial_song_spot: int, new_song_spot: int):
+    initial_song_spot-=1
+    new_song_spot-=1
+    #catch bad input
+    if initial_song_spot > len(bot.queue[interaction.guild.id]) or initial_song_spot < 1 or new_song_spot > len(bot.queue[interaction.guild.id]):
+        await interaction.response.send_message("Unfortunately the provided info is invalid. The initial song spot must be a valid spot in the queue, and cannot be 1 as that is the current playing song. The new song spot must also be a valid location in the queue, it however can be 1.",ephemeral=True)
+    #catch current song replacements     
+    else:
+        if new_song_spot == 0:
+            currentsong = bot.queue[interaction.guild.id][0]
+            bot.queue[interaction.guild.id].pop(0)
+            spot = 0
+            for song in bot.queueorder[interaction.guild.id]:
+                if song == currentsong:
+                    bot.queueorder[interaction.guild.id].pop(spot)
+                    break
+                else:
+                    spot+=1
+        selectedsong = bot.queue[interaction.guild.id][initial_song_spot]
+        bot.queue[interaction.guild.id].insert(new_song_spot,bot.queue[interaction.guild.id].pop(initial_song_spot))
+        spot = 0
+        for song in bot.queueorder[interaction.guild.id]:
+            if song == selectedsong:
+                bot.queueorder[interaction.guild.id].pop(spot)
+            else:
+                spot+=1
+        await interaction.response.send_message(f"Successfully moved {selectedsong['title']} to spot {new_song_spot+1}.")
+
+
 
 #shuffle
 @queue.command(name="shuffle", description='enables or disables shuffle')
@@ -315,14 +355,22 @@ async def skip(interaction: discord.Interaction):
     # make sure there is a second song to play after this one
     if len(bot.queue[interaction.guild.id]) > 1:
         #record title to inform what was skipped
-        title = bot.queue[interaction.guild.id][0]["title"]
+        title = bot.queue[interaction.guild.id][0]
         # skip the current song
         bot.queue[interaction.guild.id].pop(0)
+        spot = 0
+        for song in bot.queueorder[interaction.guild.id]:
+            if song == title:
+                bot.queueorder[interaction.guild.id].pop(spot)
+                break
+            else:
+                spot+=1
         # tell the user that it was done
-        await interaction.response.send_message(f"Skipped {title}")
+        await interaction.response.send_message(f"Skipped {title['title']}")
     # if only one song, stop playback altogether
     elif discord.utils.get(bot.voice_clients, guild=interaction.guild) != None:
         bot.queue[interaction.guild.id] = []
+        bot.queueorder = []
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("Only one song in queue, stopping.")
     # if neither, no songs are playing
