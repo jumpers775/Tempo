@@ -35,6 +35,19 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     token INTEGER
 )""")
 
+
+
+
+
+# set intents
+intents = discord.Intents.default()
+intents.message_content = True
+
+# make the bot
+bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
+
+
+
 # basic setup
 @bot.event
 async def on_ready():
@@ -48,14 +61,6 @@ async def on_ready():
         bot.queueorder[guild.id] = []
 
 
-
-
-# set intents
-intents = discord.Intents.default()
-intents.message_content = True
-
-# make the bot
-bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
 
 #sync commands with discord
 @bot.command()
