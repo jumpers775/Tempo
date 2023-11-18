@@ -30,8 +30,6 @@ cursor = db.cursor()
 
 cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     id INTEGER,
-    name TEXT,
-    discriminator INTEGER,
     token INTEGER
 )""")
 
