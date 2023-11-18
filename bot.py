@@ -2,7 +2,7 @@ import json
 import discord
 from discord.ext import commands
 import asyncio
-import yt-dlp as youtube_dl
+import yt_dlp as youtube_dl
 import dotenv
 import typing
 import os
