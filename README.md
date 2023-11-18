@@ -3,7 +3,8 @@
 
 ## dependencies
 to install the dependencies run:
-`pip install pynacl discord asyncio youtube_search yt-dlp python-dotenv`
+`pip install pynacl discord asyncio youtube_search yt-dlp python-dotenv librespot`
+Also [install sqlite3](https://www.sqlite.org/index.html)
 
 ## Running the bot
 
@@ -25,4 +26,5 @@ This bot features the following:
 - [X] A way to manipulate the queue
 - [X] Shuffle playback
 - [X] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
+- [ ] Spotify
 - [ ] Auto updates or update notifications

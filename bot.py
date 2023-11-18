@@ -8,6 +8,9 @@ import typing
 import os
 import random
 from youtube_search import YoutubeSearch
+import sqlite3
+
+
 
 # get token 
 dotenv.load_dotenv()
@@ -17,6 +20,35 @@ except:
     token = input("no token provided, Please input it here: ")
     with open('.env', 'w') as envfile:
         envfile.write('token = '+ token)
+
+
+#setup sqlite3
+
+db = sqlite3.connect("userdata.db")
+
+cursor = db.cursor()
+
+cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+    id INTEGER,
+    name TEXT,
+    discriminator INTEGER,
+    token INTEGER
+)""")
+
+# basic setup
+@bot.event
+async def on_ready():
+    print(f"{bot.user} is online.")
+    bot.queue = {}
+    bot.shuffle = {}
+    bot.queueorder = {}
+    for guild in bot.guilds:
+        bot.queue[guild.id] = []
+        bot.shuffle[guild.id] = False
+        bot.queueorder[guild.id] = []
+
+
+
 
 # set intents
 intents = discord.Intents.default()
@@ -53,34 +85,19 @@ async def sync(ctx: commands.Context, guilds: commands.Greedy[discord.Object], s
 
     await ctx.send(f"Synced the tree to {fmt}/{len(guilds)} guilds.")@commands.is_owner()
 
-# basic setup
-@bot.event
-async def on_ready():
-    print(f"{bot.user} is online.")
-    bot.queue = {}
-    bot.shuffle = {}
-    bot.queueorder = {}
-    for guild in bot.guilds:
-        bot.queue[guild.id] = []
-        bot.shuffle[guild.id] = False
-        bot.queueorder[guild.id] = []
 
 
 #youtube streaming
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
-
         self.data = data
-
-        self.title = data.get('title')
         self.url = data.get('url')
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         youtube_dl.utils.bug_reports_message = lambda: ''
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
             'nocheckcertificate': True,
@@ -98,7 +115,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
         if 'entries' in data:
-            # take first item from a playlist
+            # take first item from a youtube playlist
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
