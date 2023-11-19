@@ -8,6 +8,13 @@ import typing
 import os
 import random
 from youtube_search import YoutubeSearch
+import sqlite3
+import librespot.core as lbc
+from librespot.metadata import TrackId
+from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
+import spotipy
+
+
 
 # get token 
 dotenv.load_dotenv()
@@ -18,12 +25,45 @@ except:
     with open('.env', 'w') as envfile:
         envfile.write('token = '+ token)
 
+
+#setup sqlite3
+
+db = sqlite3.connect("userdata.db")
+
+cursor = db.cursor()
+
+cursor.execute("""CREATE TABLE IF NOT EXISTS users(
+    id INTEGER,
+    spotify INTEGER
+)""")
+
+db.close()
+
+
+
+
 # set intents
 intents = discord.Intents.default()
 intents.message_content = True
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
+
+
+
+# basic setup
+@bot.event
+async def on_ready():
+    print(f"{bot.user} is online.")
+    bot.queue = {}
+    bot.shuffle = {}
+    bot.queueorder = {}
+    for guild in bot.guilds:
+        bot.queue[guild.id] = []
+        bot.shuffle[guild.id] = False
+        bot.queueorder[guild.id] = []
+
+
 
 #sync commands with discord
 @bot.command()
@@ -53,34 +93,99 @@ async def sync(ctx: commands.Context, guilds: commands.Greedy[discord.Object], s
 
     await ctx.send(f"Synced the tree to {fmt}/{len(guilds)} guilds.")@commands.is_owner()
 
-# basic setup
-@bot.event
-async def on_ready():
-    print(f"{bot.user} is online.")
-    bot.queue = {}
-    bot.shuffle = {}
-    bot.queueorder = {}
-    for guild in bot.guilds:
-        bot.queue[guild.id] = []
-        bot.shuffle[guild.id] = False
-        bot.queueorder[guild.id] = []
+
+# spotify
+
+
+
+
+
+@discord.app_commands.command(name='spotauth', description='authenticates a spotify premium account. MAKE SURE YOU TRUST THE BOT OWNER.')
+async def spotauth(interaction: discord.Interaction, email:str, passwd:str):
+    
+    db = sqlite3.connect("userdata.db")
+
+    cursor = db.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
+    result = cursor.fetchone()
+    db.close()
+    if result == None:
+        try:
+            session = lbc.Session.Builder() \
+            .user_pass(email,passwd) \
+            .create()
+
+        except:
+            await interaction.response.send_message("Invalid credentials.", ephemeral=True)
+            return
+        access_token = session.stored()
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("INSERT INTO users VALUES (?,?)", (interaction.user.id,access_token))
+        db.commit()
+        db.close()
+    else:
+        await interaction.response.send_message("You have already authenticated a spotify account. Use /spotrm to remove it", ephemeral=True)
+        return
+    await interaction.response.send_message("Successfully authenticated spotify account.",ephemeral=True)
+
+bot.tree.add_command(spotauth)
+
+
+
+@discord.app_commands.command(name='spotrm', description='removes an authenticated a spotify premium account.')
+async def spotrm(interaction: discord.Interaction):
+    db = sqlite3.connect("userdata.db")
+
+    cursor = db.cursor()
+
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
+    result = cursor.fetchone()
+
+    db.close()
+    if result == None:
+        await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
+        return
+    else:
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
+        db.commit()
+        db.close()
+    await interaction.response.send_message("Successfully removed spotify account.",ephemeral=True)
+bot.tree.add_command(spotrm)
+
+
+
+
+
+class ByteAudioSource(discord.PCMVolumeTransformer):
+    def __init__(self, source, *, stream,volume=0.5):
+        super().__init__(source,volume)
+        self.stream = stream
+
+    @classmethod
+    async def get_stream(cls, stream):
+        ffmpeg_options = {
+            'options': '-vn',
+        }
+        return cls(discord.FFmpegPCMAudio(stream, **ffmpeg_options, pipe=True), stream=stream)
+
+
 
 
 #youtube streaming
 class YTDLSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, data, volume=0.5):
         super().__init__(source, volume)
-
         self.data = data
-
-        self.title = data.get('title')
         self.url = data.get('url')
     @classmethod
     async def from_url(cls, url, *, loop=None, stream=False):
         youtube_dl.utils.bug_reports_message = lambda: ''
         ydl_opts = {
             'format': 'bestaudio/best',
-            'outtmpl': '%(extractor)s-%(id)s-%(title)s.%(ext)s',
             'restrictfilenames': True,
             'noplaylist': True,
             'nocheckcertificate': True,
@@ -98,7 +203,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         loop = loop or asyncio.get_event_loop()
         data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
         if 'entries' in data:
-            # take first item from a playlist
+            # take first item from a youtube playlist
             data = data['entries'][0]
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
@@ -113,15 +218,32 @@ async def play(interaction: discord.Interaction, song:str):
         await interaction.response.send_message("you are not currently in a voice channel.")
         return
     message = await interaction.response.send_message("searching...")
-    # search for the song on youtube
-    results = YoutubeSearch(song, max_results=10).to_json()
-    results = json.loads(results)
-    results = results['videos']
+
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    spot_result = cursor.fetchone()
+    db.close()
+    if spot_result == None:
+        # search for the song on youtube
+        results = YoutubeSearch(song, max_results=10).to_json()
+        results = json.loads(results)
+        results = results['videos']
+    else:
+        # search for the song on spotify
+        session = lbc.Session.Builder().stored(spot_result[1]).create()
+        oauth_token = session.tokens().get("playlist-read")
+        sp = spotipy.Spotify(auth=oauth_token)
+        results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
+        results = [result | {"user_id": interaction.user.id} for result in results]
     #build an option for each song
     options = []
     num = 1
     for result in results:
-        options.append(discord.SelectOption(label=f'{num}) '+ result['title'], description=f'By {result["channel"]}', emoji='🎧'))
+        if spot_result == None:
+            options.append(discord.SelectOption(label=f'{num}) '+ result['title'], description=f'By {result["channel"]}', emoji='🎧'))
+        else:
+            options.append(discord.SelectOption(label=f'{num}) '+ result["name"], description=f'By {result["artists"][0]["name"]}', emoji='🎧'))
         num+=1
 
     #build a view to choose the option
@@ -150,13 +272,24 @@ class SelectSong(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction):
         #check the selection against the list
         for option in self.music_options:
-            if option['title'] == self.values[0][3:]:
-                # set the url
-                url = 'https://www.youtube.com' + option['url_suffix']
-                # set the title
-                title = option['title']                
-                # make queue entry
-                entry = {"url": url,"title": title}
+            
+            spotify = "uri" in option
+            if option["name" if spotify else'title'] == self.values[0][3:]:
+                #build entry
+                if spotify:
+                    # set the url
+                    url = option['uri']
+                    # set the title
+                    title = option['name']
+                    # make queue entry
+                    entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
+                else:
+                    # set the url
+                    url = 'https://www.youtube.com' + option['url_suffix']
+                    # set the title
+                    title = option['title']
+                    # make queue entry
+                    entry = {"url": url,"title": title,"platform": "youtube","auth": None}
                 #insert in a random spot non-current if shuffle is enabled, at the end if disabled
                 if bot.shuffle[interaction.guild.id] and len(bot.queue[interaction.guild.id]) > 1:
                     spot = random.randint(1,len(bot.queue[interaction.guild.id]))
@@ -177,10 +310,25 @@ class SelectSong(discord.ui.Select):
                     vc = await interaction.user.voice.channel.connect()
                     #wait for the queue to be empty
                     while len(bot.queue[interaction.guild.id]) > 0:
-                        #record what will be played
-                        songname = bot.queue[interaction.guild.id][0]
-                        #get a stream
-                        song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
+                        if spotify:
+                            db = sqlite3.connect("userdata.db")
+                            cursor = db.cursor()
+                            cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"],))
+                            spot_result = cursor.fetchone()
+                            db.close()
+                            session = lbc.Session.Builder().stored(spot_result[1]).create()
+
+                            track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
+                            stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
+                            audio = stream.input_stream
+                            song = await ByteAudioSource.get_stream(stream=audio.stream())
+                            songname = bot.queue[interaction.guild.id][0]
+                            
+                        else:
+                            #record what will be played
+                            songname = bot.queue[interaction.guild.id][0]
+                            #get a stream
+                            song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
                         #play the stream
                         vc.play(song)
                         #wait for the current song to end or get skipped
