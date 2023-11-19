@@ -26,5 +26,5 @@ This bot features the following:
 - [X] A way to manipulate the queue
 - [X] Shuffle playback
 - [X] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
-- [ ] Spotify
+- [X] Spotify
 - [ ] Auto updates or update notifications
