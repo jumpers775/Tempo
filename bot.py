@@ -15,14 +15,22 @@ from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
 import aiohttp
 
-version = 0.1
+version = "0.0.1"
 
 # version check
 async def versioncheck():
     async with aiohttp.ClientSession() as session:
         async with session.get('https://api.github.com/repos/jumpers775/Tempo/releases/latest') as resp:
-            print(await resp.json())
-asyncio.run(versioncheck())
+            newestversion = await resp.json()
+            newestversion = newestversion["tag_name"]
+            latestversion = newestversion.split(".")
+            currentversion = version.split(".")
+            if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
+                print(f"Update Available!\n{version} --> {newestversion}")
+try:
+    asyncio.run(versioncheck())
+except:
+    print("Failed to check for updates.")
 
 
 
