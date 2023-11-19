@@ -57,9 +57,9 @@ bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(n
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online.")
-    bot.queue = {}
-    bot.shuffle = {}
-    bot.queueorder = {}
+    bot.queue = {0:[]}
+    bot.shuffle = {0:False}
+    bot.queueorder = {0:[]}
     for guild in bot.guilds:
         bot.queue[guild.id] = []
         bot.shuffle[guild.id] = False
@@ -168,12 +168,10 @@ bot.tree.add_command(spotrm)
 
 
 
-
 class ByteAudioSource(discord.PCMVolumeTransformer):
     def __init__(self, source, *, stream,volume=0.5):
         super().__init__(source,volume)
         self.stream = stream
-
     @classmethod
     async def get_stream(cls, stream):
         ffmpeg_options = {
@@ -240,7 +238,11 @@ async def play(interaction: discord.Interaction, song:str):
         results = results['videos']
     else:
         # search for the song on spotify
-        session = lbc.Session.Builder().stored(spot_result[1]).create()
+        try:
+            session = lbc.Session.Builder().stored(spot_result[1]).create()
+        except:
+            await interaction.response.send_message("An error occured, please try again.")
+            return
         oauth_token = session.tokens().get("playlist-read")
         sp = spotipy.Spotify(auth=oauth_token)
         results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
@@ -280,89 +282,89 @@ class SelectSong(discord.ui.Select):
         super().__init__(placeholder="Select an option",options=option)
     async def callback(self, interaction: discord.Interaction):
         #check the selection against the list
-        for option in self.music_options:
-            
-            spotify = "uri" in option
-            if option["name" if spotify else'title'] == self.values[0][3:]:
-                #build entry
+        option = self.music_options[int(self.values[0][0])-1]
+        # uri is not in the yt dict, so if it is present it is a spotify song
+        spotify = "uri" in option
+        #build entry
+        if spotify:
+            # set the url
+            url = option['uri']
+            # set the title
+            title = option['name']
+            # make queue entry
+            entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
+        else:
+            # set the url
+            url = 'https://www.youtube.com' + option['url_suffix']
+            # set the title
+            title = option['title']
+            # make queue entry
+            entry = {"url": url,"title": title,"platform": "youtube","auth": None}
+        #insert in a random spot non-current if shuffle is enabled, at the end if disabled
+        if bot.shuffle[interaction.guild.id] and len(bot.queue[interaction.guild.id]) > 1:
+            spot = random.randint(1,len(bot.queue[interaction.guild.id]))
+        else:
+            spot = len(bot.queue[interaction.guild.id])
+        bot.queue[interaction.guild.id].insert(spot, entry)
+        #record the location of this item in case shuffle is turned off
+        print(type(bot.queueorder),bot.queueorder)
+        bot.queueorder[interaction.guild.id].append(entry)
+        #check if the new url is the first in the list
+        if not bot.queue[interaction.guild.id][0]["url"] is url:
+            #if the new url isnt first, reply that it has been added to the queue
+            await self.original_interaction.edit_original_response(content=f"{str(self.values[0])[3:]} has been added to the queue!",view=None)
+            return
+        else:
+            #if it is, reply that it is playing
+            await self.original_interaction.edit_original_response(content=f"Now playing {str(self.values[0])[3:]}!",view=None)
+            #connect to the vc
+            vc = await interaction.user.voice.channel.connect()
+            #wait for the queue to be empty
+            while len(bot.queue[interaction.guild.id]) > 0:
                 if spotify:
-                    # set the url
-                    url = option['uri']
-                    # set the title
-                    title = option['name']
-                    # make queue entry
-                    entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
-                else:
-                    # set the url
-                    url = 'https://www.youtube.com' + option['url_suffix']
-                    # set the title
-                    title = option['title']
-                    # make queue entry
-                    entry = {"url": url,"title": title,"platform": "youtube","auth": None}
-                #insert in a random spot non-current if shuffle is enabled, at the end if disabled
-                if bot.shuffle[interaction.guild.id] and len(bot.queue[interaction.guild.id]) > 1:
-                    spot = random.randint(1,len(bot.queue[interaction.guild.id]))
-                else:
-                    spot = len(bot.queue[interaction.guild.id])
-                bot.queue[interaction.guild.id].insert(spot, entry)
-                #record the location of this item in case shuffle is turned off
-                bot.queueorder[interaction.guild.id].append(entry)
-                #check if the new url is the first in the list
-                if not bot.queue[interaction.guild.id][0]["url"] is url:
-                    #if the new url isnt first, reply that it has been added to the queue
-                    await self.original_interaction.edit_original_response(content=f"{str(self.values[0])[3:]} has been added to the queue!",view=None)
-                    return
-                else:
-                    #if it is, reply that it is playing
-                    await self.original_interaction.edit_original_response(content=f"Now playing {str(self.values[0])[3:]}!",view=None)
-                    #connect to the vc
-                    vc = await interaction.user.voice.channel.connect()
-                    #wait for the queue to be empty
-                    while len(bot.queue[interaction.guild.id]) > 0:
-                        if spotify:
-                            db = sqlite3.connect("userdata.db")
-                            cursor = db.cursor()
-                            cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"],))
-                            spot_result = cursor.fetchone()
-                            db.close()
-                            session = lbc.Session.Builder().stored(spot_result[1]).create()
+                    db = sqlite3.connect("userdata.db")
+                    cursor = db.cursor()
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"],))
+                    spot_result = cursor.fetchone()
+                    db.close()
+                    session = lbc.Session.Builder().stored(spot_result[1]).create()
 
-                            track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
-                            stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
-                            audio = stream.input_stream
-                            song = await ByteAudioSource.get_stream(stream=audio.stream())
-                            songname = bot.queue[interaction.guild.id][0]
-                            
-                        else:
-                            #record what will be played
-                            songname = bot.queue[interaction.guild.id][0]
-                            #get a stream
-                            song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
-                        #play the stream
-                        vc.play(song)
-                        #wait for the current song to end or get skipped
-                        while vc.is_playing():
-                            if not songname == bot.queue[interaction.guild.id][0]:
-                                vc.stop()
-                            await asyncio.sleep(0.1)
-                        #remove the first entry in the queue if not skipped
-                        if len(bot.queue[interaction.guild.id]) > 0:
-                            if songname == bot.queue[interaction.guild.id][0]:
-                                #remove from queue
-                                bot.queue[interaction.guild.id].pop(0)
-                                # if shuffle is enable iterate over ordered list to find song and remove it
-                                if bot.shuffle[interaction.guild.id]:
-                                    spot = 0
-                                    for song in bot.queueorder[interaction.guild.id]:
-                                        if song == songname:
-                                            bot.queueorder[interaction.guild.id].pop(spot)
-                                            break
-                                        else:
-                                            spot+=1
+                    track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
+                    stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
+                    audio = stream.input_stream
+                    song = await ByteAudioSource.get_stream(stream=audio.stream())
+                    songname = bot.queue[interaction.guild.id][0]
+                    
+                else:
+                    #record what will be played
+                    songname = bot.queue[interaction.guild.id][0]
+                    #get a stream
+                    song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
+                #play the stream
+                vc.play(song)
+                #wait for the current song to end or get skipped
+                while vc.is_playing():
+                    if not songname == bot.queue[interaction.guild.id][0]:
+                        vc.stop()
+                    await asyncio.sleep(0.1)
+                #remove the first entry in the queue if not skipped
+                if len(bot.queue[interaction.guild.id]) > 0:
+                    if songname == bot.queue[interaction.guild.id][0]:
+                        #remove from queue
+                        bot.queue[interaction.guild.id].pop(0)
+                        # if shuffle is enable iterate over ordered list to find song and remove it
+                        if bot.shuffle[interaction.guild.id]:
+                            spot = 0
+                            for song in bot.queueorder[interaction.guild.id]:
+                                if song == songname:
+                                    bot.queueorder[interaction.guild.id].pop(spot)
+                                    break
                                 else:
-                                    bot.queueorder[interaction.guild.id].pop(0)
-                    #disconnect once the list is empty
-                    await vc.disconnect()
+                                    spot+=1
+                        else:
+                            bot.queueorder[interaction.guild.id].pop(0)
+            #disconnect once the list is empty
+            await vc.disconnect()
 #add the play command to the bots command tree
 bot.tree.add_command(play)
 
@@ -527,7 +529,7 @@ async def skip(interaction: discord.Interaction):
     # if only one song, stop playback altogether
     elif discord.utils.get(bot.voice_clients, guild=interaction.guild) != None:
         bot.queue[interaction.guild.id] = []
-        bot.queueorder = []
+        bot.queueorder[interaction.guild.id] = []
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("Only one song in queue, stopping.")
     # if neither, no songs are playing
