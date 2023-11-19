@@ -97,13 +97,6 @@ async def sync(ctx: commands.Context, guilds: commands.Greedy[discord.Object], s
 # spotify
 
 
-async def is_spotify(id:int):
-    db = sqlite3.connect("userdata.db")
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (id,))
-    result = cursor.fetchone()
-    db.close()
-    return result != None
 
 
 
