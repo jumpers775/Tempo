@@ -13,8 +13,6 @@ import librespot.core as lbc
 from librespot.metadata import TrackId
 from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
-import pydub
-import opuslib
 
 
 
