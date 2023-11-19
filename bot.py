@@ -13,6 +13,16 @@ import librespot.core as lbc
 from librespot.metadata import TrackId
 from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
+import aiohttp
+
+version = 0.1
+
+# version check
+async def versioncheck():
+    async with aiohttp.ClientSession() as session:
+        async with session.get('https://api.github.com/repos/jumpers775/Tempo/releases/latest') as resp:
+            print(await resp.json())
+asyncio.run(versioncheck())
 
 
 
@@ -55,9 +65,9 @@ bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(n
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online.")
-    bot.queue = {0:[]}
-    bot.shuffle = {0:False}
-    bot.queueorder = {0:[]}
+    bot.queue = {}
+    bot.shuffle = {}
+    bot.queueorder = {}
     for guild in bot.guilds:
         bot.queue[guild.id] = []
         bot.shuffle[guild.id] = False
@@ -196,10 +206,11 @@ class YTDLSource(discord.PCMVolumeTransformer):
         }
         ffmpeg_options = {
             'options': '-vn',
+            'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
         }
         ytdl = youtube_dl.YoutubeDL(ydl_opts)
         loop = loop or asyncio.get_event_loop()
-        data = await loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=not stream))
+        data = await loop.run_in_executor(None, lambda: ytdl.sanitize_info(ytdl.extract_info(url, download=not stream)))
         if 'entries' in data:
             # take first item from a youtube playlist
             data = data['entries'][0]
@@ -298,7 +309,6 @@ class SelectSong(discord.ui.Select):
             spot = len(bot.queue[interaction.guild.id])
         bot.queue[interaction.guild.id].insert(spot, entry)
         #record the location of this item in case shuffle is turned off
-        print(type(bot.queueorder),bot.queueorder)
         bot.queueorder[interaction.guild.id].append(entry)
         #check if the new url is the first in the list
         if not bot.queue[interaction.guild.id][0]["url"] is url:
