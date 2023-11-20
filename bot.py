@@ -1,6 +1,6 @@
 import json
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import asyncio
 import yt_dlp as youtube_dl
 import dotenv
@@ -18,21 +18,9 @@ import os
 
 
 version = "1.0.0"
+# so that the owner is only notified once
+ownerupdated = False
 
-# version check
-async def versioncheck():
-    async with aiohttp.ClientSession() as session:
-        async with session.get('https://api.github.com/repos/jumpers775/Tempo/releases/latest') as resp:
-            newestversion = await resp.json()
-            newestversion = newestversion["tag_name"]
-            latestversion = newestversion.split(".")
-            currentversion = version.split(".")
-            if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
-                print(f"Update Available!\n{version} --> {newestversion}")
-try:
-    asyncio.run(versioncheck())
-except:
-    print("Failed to check for updates.")
 
 # load settings
 
@@ -71,8 +59,6 @@ if settings["globalSpotify"]:
     
 
 
-
-
 # get token 
 dotenv.load_dotenv()
 try:
@@ -102,15 +88,34 @@ db.close()
 # set intents
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
 
 
 
+
+@tasks.loop(hours=1)
+async def updatecheck():
+    async with aiohttp.ClientSession() as session:
+        async with session.get('https://api.github.com/repos/jumpers775/Tempo/releases/latest') as resp:
+            resp = await resp.json()
+            newestversion = resp["tag_name"]
+            latestversion = newestversion.split(".")
+            currentversion = version.split(".")
+            if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
+                print(f"Update Available!\n{version} --> {newestversion}")
+                if settings["updateDM"] and not ownerupdated:
+                    app_info = await bot.application_info()
+                    user = bot.get_user(app_info.owner.id)
+                    await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
+
+
 # basic setup
 @bot.event
 async def on_ready():
+    await updatecheck()
     print(f"{bot.user} is online.")
     bot.queue = {}
     bot.shuffle = {}
