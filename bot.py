@@ -14,6 +14,8 @@ from librespot.metadata import TrackId
 from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
 import aiohttp
+import os
+
 
 version = "1.0.0"
 
@@ -31,6 +33,21 @@ try:
     asyncio.run(versioncheck())
 except:
     print("Failed to check for updates.")
+
+# load settings
+
+if os.path.isfile("settings.json"):
+    with open("settings.json", "r") as settingsfile:
+        settings = json.load(settingsfile)
+else:
+    settings = {
+        "globalSpotify": False,
+        "updateDM": True,
+    }
+    with open("settings.json", "w") as settingsfile:
+        json.dump(settings, settingsfile)
+
+
 
 
 
