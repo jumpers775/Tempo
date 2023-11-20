@@ -15,7 +15,7 @@ from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
 import aiohttp
 
-version = "0.0.1"
+version = "1.0.0"
 
 # version check
 async def versioncheck():
