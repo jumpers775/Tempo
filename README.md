@@ -4,7 +4,7 @@
 ## dependencies
 to install the dependencies run:
 `pip install pynacl discord asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp`
-Also [install sqlite3](https://www.sqlite.org/index.html)
+Also [install sqlite3](https://www.sqlite.org/index.html) and [ffmpeg](https://ffmpeg.org/)
 
 ## Running the bot
 
