@@ -47,6 +47,28 @@ else:
     with open("settings.json", "w") as settingsfile:
         json.dump(settings, settingsfile)
 
+if settings["globalSpotify"]:
+    print("Global Spotify is enabled. Please sign into your premium account.")
+    username = input("Username: ")
+    password = input("Password: ")
+    sign_in = False
+    while not sign_in :
+        try:
+            session = lbc.Session.Builder() \
+            .user_pass(username,password) \
+            .create()
+            sign_in = True
+        except:
+            print("Invalid credentials. Please try again.")
+            username = input("Username: ")
+            password = input("Password: ")
+    access_token = session.stored()
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("INSERT INTO users VALUES (?,?)", (0,access_token))
+    db.commit()
+    db.close()
+    
 
 
 
@@ -255,7 +277,7 @@ async def play(interaction: discord.Interaction, song:str):
 
     db = sqlite3.connect("userdata.db")
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id if not settings["globalSpotify"] else 0,))
     spot_result = cursor.fetchone()
     db.close()
     if spot_result == None:
@@ -350,7 +372,7 @@ class SelectSong(discord.ui.Select):
                 if spotify:
                     db = sqlite3.connect("userdata.db")
                     cursor = db.cursor()
-                    cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"],))
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"] if not settings["globalSpotify"] else 0,))
                     spot_result = cursor.fetchone()
                     db.close()
                     session = lbc.Session.Builder().stored(spot_result[1]).create()
