@@ -457,7 +457,8 @@ async def play(interaction: discord.Interaction, song:str):
 
     #select a song
     try:
-        await interaction.edit_original_response(content=f'{"The user who authenticated your account has removed their account. They will need to re-authenticate and re-add you for you to use their account.\nUsing Youtube\n" if spot and not spot_authenticated else ""}Select a song to play:',view=view)
+        messsage = "The user who authenticated your account has removed their account. They will need to re-authenticate and re-add you for you to use their account.\nUsing Youtube\n" if spot and not spot_authenticated else "" + "Select a song to play:"
+        await interaction.edit_original_response(content=message,view=view)
     except:
         await interaction.edit_original_response(content='An error occured. Please Try again.')
 
