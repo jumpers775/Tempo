@@ -162,7 +162,7 @@ settings = discord.app_commands.Group(name='settings', description='settings rel
 @settings.command(name='show', description='shows all settings')
 async def show(interaction: discord.Interaction):
     
-    response = discord.Embed(title="Settings:", description="".join([f"{i}: {"Enabled" if bot.settings[i] else "Disabled"}\n" for i in bot.settings]), color=0x336EFF)
+    response = discord.Embed(title="Settings:", description="".join([f"{i}: {'Enabled' if bot.settings[i] else 'Disabled'}\n" for i in bot.settings]), color=0x336EFF)
     await interaction.response.send_message(embed=response)
 @show.error
 async def show_error(interaction: discord.Interaction, error: Exception):
