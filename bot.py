@@ -17,7 +17,7 @@ import aiohttp
 import os
 
 
-version = "1.0.0"
+version = "1.1.0"
 # so that the owner is only notified once
 ownerupdated = False
 
