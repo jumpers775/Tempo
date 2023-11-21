@@ -107,7 +107,7 @@ async def updatecheck():
             currentversion = version.split(".")
             if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
                 print(f"Update Available!\n{version} --> {newestversion}")
-                if settings["updateDM"] and not ownerupdated:
+                if bot.settings["updateDM"] and not ownerupdated:
                     app_info = await bot.application_info()
                     user = bot.get_user(app_info.owner.id)
                     await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
@@ -263,10 +263,37 @@ async def rm(interaction: discord.Interaction):
         await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
         return
     else:
+        if result[2] == True:
+            view = SelectButtonView(options=["Yes","No"], interaction=interaction)
+            await interaction.response.send_message("You are currently authorized to use someone elses spotify account. If you remove your account you will need to be added again by them.", ephemeral=True,view=view)
+            return
         cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
         db.commit()
         db.close()
     await interaction.response.send_message("Successfully removed spotify account.",ephemeral=True)
+
+class SelectButtonView(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: list, interaction: discord.Interaction):
+        super().__init__(timeout=timeout)
+        for option in options:
+            self.add_item(ButtonClass(label=option, interaction=interaction))
+
+class ButtonClass(discord.ui.Button):
+    def __init__(self, label: str, interaction: discord.Interaction):
+        # Allow access to the original interaction
+        self.original_interaction = interaction
+        super().__init__(label=label)
+    
+    async def callback(self, interaction: discord.Interaction):
+        if self.label == "Yes":
+            db = sqlite3.connect("userdata.db")
+            cursor = db.cursor()
+            cursor.execute("DELETE FROM users WHERE id = ?", (self.original_interaction.user.id,))
+            db.commit()
+            db.close()
+            await self.original_interaction.edit_original_response(content="Successfully removed spotify account.",view=None)
+        else:
+            await self.original_interaction.edit_original_response(content="Cancelled.",view=None)
 
 @spot.command(name='trustuser', description='authorizes a user to your spotify account.')
 async def trustuser(interaction: discord.Interaction,member: discord.Member):
@@ -309,7 +336,6 @@ async def rmuser(interaction: discord.Interaction,member: discord.Member):
     else:
         await interaction.response.send_message(f"This user does not have access to your spotify account.",ephemeral=True)
 bot.tree.add_command(spot)
-
 
 
 class ByteAudioSource(discord.PCMVolumeTransformer):
@@ -374,28 +400,41 @@ async def play(interaction: discord.Interaction, song:str):
         await interaction.response.send_message("I do not have permission to play music in that voice channel.")
         return
     message = await interaction.response.send_message("searching...")
-
+    spot_authenticated = False
     db = sqlite3.connect("userdata.db")
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id if not settings["globalSpotify"] else 0,))
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id if not bot.settings["globalSpotify"] else 0,))
     spot_result = cursor.fetchone()
-    db.close()
+    spot = spot_result!=None
     if spot_result == None:
         # search for the song on youtube
         results = YoutubeSearch(song, max_results=10).to_json()
         results = json.loads(results)
         results = results['videos']
     else:
-        # search for the song on spotify
-        try:
-            session = lbc.Session.Builder().stored(spot_result[1]).create()
-        except:
-            await interaction.response.send_message("An error occured, please try again.")
-            return
-        oauth_token = session.tokens().get("playlist-read")
-        sp = spotipy.Spotify(auth=oauth_token)
-        results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
-        results = [result | {"user_id": interaction.user.id} for result in results]
+        if spot_result[2] == True:
+            cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
+            spot_result = cursor.fetchone()
+            if spot_result == None:
+                #use youtube if spotify acc is broken
+                results = YoutubeSearch(song, max_results=10).to_json()
+                results = json.loads(results)
+                results = results['videos']
+
+                cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
+        else: 
+            # search for the song on spotify
+            try:
+                session = lbc.Session.Builder().stored(spot_result[1]).create()
+            except:
+                await interaction.edit_original_response(content="An error occured, please try again.")
+                return
+            oauth_token = session.tokens().get("playlist-read")
+            sp = spotipy.Spotify(auth=oauth_token)
+            results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
+            results = [result | {"user_id": interaction.user.id} for result in results]
+            spot_authenticated = True
+    db.close()
     #build an option for each song
     options = []
     num = 1
@@ -407,16 +446,16 @@ async def play(interaction: discord.Interaction, song:str):
         num+=1
 
     #build a view to choose the option
-    view = SelectView(options=options, interaction=interaction,results=results)
+    view = SelectListView(options=options, interaction=interaction,results=results)
 
     #select a song
     try:
-        await interaction.edit_original_response(content='Select a song to play:',view=view)
+        await interaction.edit_original_response(content=f'{"The user who authenticated your account has removed their account. They will need to re-authenticate and re-add you for you to use their account.\nUsing Youtube\n" if spot and not spot_authenticated else ""}Select a song to play:',view=view)
     except:
         await interaction.edit_original_response(content='An error occured. Please Try again.')
 
 #view class to select the correct song.
-class SelectView(discord.ui.View):
+class SelectListView(discord.ui.View):
     def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list):
         super().__init__(timeout=timeout)
         self.add_item(SelectSong(option=options, interaction=interaction,results=results))
@@ -472,7 +511,7 @@ class SelectSong(discord.ui.Select):
                 if spotify:
                     db = sqlite3.connect("userdata.db")
                     cursor = db.cursor()
-                    cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"] if not settings["globalSpotify"] else 0,))
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"] if not bot.settings["globalSpotify"] else 0,))
                     spot_result = cursor.fetchone()
                     if spot_result[2] == True:
                         cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
