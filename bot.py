@@ -77,7 +77,8 @@ cursor = db.cursor()
 
 cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     id INTEGER,
-    spotify INTEGER
+    spotify INTEGER,
+    Authorized BOOL DEFAULT FALSE
 )""")
 
 db.close()
@@ -92,7 +93,7 @@ intents.members = True
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
-
+bot.settings = settings
 
 
 
@@ -155,15 +156,52 @@ async def sync(ctx: commands.Context, guilds: commands.Greedy[discord.Object], s
 
     await ctx.send(f"Synced the tree to {fmt}/{len(guilds)} guilds.")@commands.is_owner()
 
+settings = discord.app_commands.Group(name='settings', description='settings related commands.')
+
+@commands.check_any(commands.is_owner())
+@settings.command(name='show', description='shows all settings')
+async def show(interaction: discord.Interaction):
+    
+    response = discord.Embed(title="Settings:", description="".join([f"{i}: {"Enabled" if bot.settings[i] else "Disabled"}\n" for i in bot.settings]), color=0x336EFF)
+    await interaction.response.send_message(embed=response)
+@show.error
+async def show_error(interaction: discord.Interaction, error: Exception):
+    await interaction.response.send_message(f'{interaction.user.mention}, You must be the bot owner to use this command',ephemeral=True)
+
+@commands.check_any(commands.is_owner())
+@settings.command(name='set', description='sets a setting')
+async def set(interaction: discord.Interaction, setting:str, value:bool):
+    try:
+        bot.settings[setting] = value
+    except:
+        await interaction.response.send_message("Invalid setting or value.",ephemeral=True)
+        return
+    with open("settings.json", "w") as settingsfile:
+        json.dump(bot.settings, settingsfile)
+    await interaction.response.send_message(f"Successfully set {setting} to {value}.")
+@set.autocomplete('setting')
+async def mute_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    settings = [i for i in bot.settings]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+
+bot.tree.add_command(settings)
 
 # spotify
 
 
 
+spot = discord.app_commands.Group(name='spot', description='Spotify related commands.')
 
 
-@discord.app_commands.command(name='spotauth', description='authenticates a spotify premium account. MAKE SURE YOU TRUST THE BOT OWNER.')
-async def spotauth(interaction: discord.Interaction, email:str, passwd:str):
+@spot.command(name='auth', description='authenticates a spotify premium account. MAKE SURE YOU TRUST THE BOT OWNER.')
+async def auth(interaction: discord.Interaction, email:str, password:str):
     
     db = sqlite3.connect("userdata.db")
 
@@ -171,20 +209,17 @@ async def spotauth(interaction: discord.Interaction, email:str, passwd:str):
 
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
     result = cursor.fetchone()
-    db.close()
     if result == None:
         try:
             session = lbc.Session.Builder() \
-            .user_pass(email,passwd) \
+            .user_pass(email,password) \
             .create()
 
         except:
             await interaction.response.send_message("Invalid credentials.", ephemeral=True)
             return
         access_token = session.stored()
-        db = sqlite3.connect("userdata.db")
-        cursor = db.cursor()
-        cursor.execute("INSERT INTO users VALUES (?,?)", (interaction.user.id,access_token))
+        cursor.execute("INSERT INTO users VALUES (?,?,?)", (interaction.user.id,access_token,False))
         db.commit()
         db.close()
     else:
@@ -192,12 +227,11 @@ async def spotauth(interaction: discord.Interaction, email:str, passwd:str):
         return
     await interaction.response.send_message("Successfully authenticated spotify account.",ephemeral=True)
 
-bot.tree.add_command(spotauth)
 
 
 
-@discord.app_commands.command(name='spotrm', description='removes an authenticated a spotify premium account.')
-async def spotrm(interaction: discord.Interaction):
+@spot.command(name='rm', description='removes an authenticated a spotify premium account.')
+async def rm(interaction: discord.Interaction):
     db = sqlite3.connect("userdata.db")
 
     cursor = db.cursor()
@@ -205,19 +239,56 @@ async def spotrm(interaction: discord.Interaction):
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
     result = cursor.fetchone()
 
-    db.close()
     if result == None:
         await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
         return
     else:
-        db = sqlite3.connect("userdata.db")
-        cursor = db.cursor()
         cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
         db.commit()
         db.close()
     await interaction.response.send_message("Successfully removed spotify account.",ephemeral=True)
-bot.tree.add_command(spotrm)
 
+@spot.command(name='trustuser', description='authorizes a user to your spotify account.')
+async def trustuser(interaction: discord.Interaction,member: discord.Member):
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
+    result = cursor.fetchone()
+    db.close()
+    if result == None:
+        await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
+        return
+        db = sqlite3.connect("userdata.db")
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("INSERT INTO users VALUES (?,?,?)", (member.id,interaction.user.id,True))
+    db.commit()
+    db.close()
+    await interaction.response.send_message(f"Successfully authorized {member.mention} to your spotify account.")
+
+
+@spot.command(name='rmuser', description='removes a users access to your spotify account.')
+async def rmuser(interaction: discord.Interaction,member: discord.Member):
+    if member.id == interaction.user.id:
+        await interaction.response.send_message("To remove your own accoutn please use /spot rm.", ephemeral=True)
+        return
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
+    spot_auth = cursor.fetchone()
+    if spot_auth == None or spot_auth[2] == True:
+        await interaction.response.send_message("You have not added a spotify account, or are currently authorized to use someone elses.", ephemeral=True)
+        return
+    cursor.execute("SELECT * FROM users WHERE id = ?", (member.id,))    
+    useracc = cursor.fetchone()
+    if useracc[1] == interaction.user.id and useracc[2] == True:
+        cursor.execute("DELETE FROM users WHERE id = ?", (member.id,))
+        db.commit()
+        db.close()
+        await interaction.response.send_message(f"Successfully removed {member.mention}'s access to your spotify account.")
+    else:
+        await interaction.response.send_message(f"This user does not have access to your spotify account.",ephemeral=True)
+bot.tree.add_command(spot)
 
 
 
@@ -277,6 +348,10 @@ async def play(interaction: discord.Interaction, song:str):
         channel = interaction.user.voice.channel
     except:
         await interaction.response.send_message("you are not currently in a voice channel.")
+        return
+    permissions = channel.permissions_for(interaction.guild.me)
+    if not permissions.connect or not permissions.speak:
+        await interaction.response.send_message("I do not have permission to play music in that voice channel.")
         return
     message = await interaction.response.send_message("searching...")
 
@@ -379,9 +454,14 @@ class SelectSong(discord.ui.Select):
                     cursor = db.cursor()
                     cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"] if not settings["globalSpotify"] else 0,))
                     spot_result = cursor.fetchone()
+                    if spot_result[2] == True:
+                        cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
+                        spot_result = cursor.fetchone()
                     db.close()
-                    session = lbc.Session.Builder().stored(spot_result[1]).create()
-
+                    try:
+                        session = lbc.Session.Builder().stored(spot_result[1]).create()
+                    except:
+                        continue
                     track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
                     stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
                     audio = stream.input_stream
