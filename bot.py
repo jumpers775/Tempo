@@ -171,6 +171,26 @@ async def show_error(interaction: discord.Interaction, error: Exception):
 @commands.check_any(commands.is_owner())
 @settings.command(name='set', description='sets a setting')
 async def set(interaction: discord.Interaction, setting:str, value:bool):
+    #set spotify account if global spotify is enabled
+    if setting == "globalSpotify":
+        if value == True:
+            db = sqlite3.connect("userdata.db")
+            cursor = db.cursor()
+            cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+            spot_result = cursor.fetchone()
+            if spot_result == None:
+                await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
+                return
+            else:
+                cursor.execute("UPDATE users SET spotify = ? WHERE id = ?", (spot_result[1],0))
+                db.commit()
+                db.close()
+        else:
+            db = sqlite3.connect("userdata.db")
+            cursor = db.cursor()
+            cursor.execute("UPDATE users SET spotify = ? WHERE id = ?", (None,0))
+            db.commit()
+            db.close()
     try:
         bot.settings[setting] = value
     except:
