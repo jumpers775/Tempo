@@ -27,6 +27,7 @@ This bot features the following:
 - [X] Shuffle playback
 - [X] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
 - [X] Spotify support (search, playback, accounts)
-- [ ] Spotify playlists
 - [X] update notifications
+- [ ] Spotify playlists
+- [ ] YT playlists
 - [ ] inbuilt playlists
