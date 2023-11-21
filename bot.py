@@ -80,6 +80,13 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     spotify INTEGER,
     Authorized BOOL DEFAULT FALSE
 )""")
+# update existing table match this format
+cursor.execute("SELECT * FROM users")
+result = cursor.fetchall()
+if len(result[0]) == 2:
+    cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
+    db.commit()
+
 
 db.close()
 
