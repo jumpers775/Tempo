@@ -29,7 +29,7 @@ This bot features the following:
 - [X] Spotify support (search, playback, accounts)
 - [X] Update notifications
 - [X] Pause support
-- [ ] Loop support
+- [X] Loop support
 - [ ] Spotify playlists
 - [ ] YT playlists
 - [ ] inbuilt playlists
