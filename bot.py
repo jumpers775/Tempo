@@ -212,7 +212,7 @@ async def set(interaction: discord.Interaction, setting:str, value:bool):
         json.dump(bot.settings, settingsfile)
     await interaction.response.send_message(f"Successfully set {setting} to {value}.")
 @set.autocomplete('setting')
-async def mute_autocomplete(
+async def set_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ) -> typing.List[discord.app_commands.Choice[str]]:
@@ -822,7 +822,7 @@ async def create(interaction: discord.Interaction, name: str):
     await interaction.response.send_message(f"Successfully created playlist {name}. add to it with /playlist add {name} <song>")
 
 @playlists.command(name="add", description='adds a song to a playlist.')
-async def create(interaction: discord.Interaction, playlist:str, song: str, platform: str ="youtube"):
+async def create(interaction: discord.Interaction, playlist:str, song: str, platform: str):
     db = sqlite3.connect("userdata.db")
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
@@ -853,18 +853,18 @@ async def create(interaction: discord.Interaction, playlist:str, song: str, plat
         await interaction.response.send_message("Invalid platform. Please use either 'youtube' or 'spotify'.")
         return
     options = []
-    for result in results:
+    for i in range(len(results)):
         if platform == "youtube":
-            options.append(discord.SelectOption(label=result['title'], description=f'By {result["channel"]}', emoji='🎧'))
+            options.append(discord.SelectOption(label=str(i+1) + ") " + results[i]['title'], description=f'By {results[i]["channel"]}', emoji='🎧'))
         else:
-            options.append(discord.SelectOption(label=result["name"], description=f'By {", ".join([result["artists"][i]["name"] for i in result["artists"]])}', emoji='🎧'))
+            options.append(discord.SelectOption(label=str(i+1) + ") " + results[i]["name"], description=f'By {", ".join([results[i]["artists"][j]["name"] for j in results[i]["artists"]])}', emoji='🎧'))
     view = SelectListView2(options=options, interaction=interaction,results=results,playlist=playlist,platform=platform)
     try:
         await interaction.response.send_message(f"select a song to add to {playlist}:",view=view)
     except:
         await interaction.response.send_message(content='An error occured. Please Try again.')
 @create.autocomplete('playlist')
-async def mute_autocomplete(
+async def create_autocomplete(
     interaction: discord.Interaction,
     current: str,
 ) -> typing.List[discord.app_commands.Choice[str]]:
@@ -875,13 +875,39 @@ async def mute_autocomplete(
     playlists = {}
     if result != None:
         if result[3] != None:
-            playlists=json.loads(result[3])
-    settings = [i for i in playlists]
+            playlists=list(json.loads(result[3]).keys())
+    db.close()
+    print(playlists)
+    playlists = [i for i in playlists]
     return [
-        discord.app_commands.Choice(name=setting, value=setting)
-        for setting in settings if current.lower() in setting.lower()
+        discord.app_commands.Choice(name=playlist, value=playlist)
+        for playlist in playlists if current.lower() in playlists.lower()
     ]
+@create.autocomplete('platform')
+async def create_autocomplete2(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    spotify = {}
+    if result != None:
+        if result[3] != None:
+            results=json.loads(result[3])
+            spotify = results[1] != None
+    db.close()
 
+    print(spotify)
+    playlists = ["youtube"]
+    if spotify or bot.settings["globalSpotify"]:
+        playlists.append("spotify")
+    print(playlists)
+    return [
+        discord.app_commands.Choice(name=playlist, value=playlist)
+        for playlist in playlists if current.lower() in playlists.lower()
+    ]
 
 
 class SelectListView2(discord.ui.View):
@@ -902,6 +928,7 @@ class SelectSong2(discord.ui.Select):
         super().__init__(placeholder="Select an option",options=option)
     async def callback(self, interaction: discord.Interaction):
         #check the selection against the list
+        print(self.values[0])
         option = self.music_options[int(self.values[0][0])-1]
         db = sqlite3.connect("userdata.db")
         cursor = db.cursor()
@@ -919,7 +946,7 @@ class SelectSong2(discord.ui.Select):
             title = option['name']
             entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
         playlists[self.playlist].append(entry)
-        await self.original_interaction.edit_original_response(content=f"Successfully added {title} to {self.playlist}.")
+        await self.original_interaction.edit_original_response(content=f"Successfully added {title} to {self.playlist}.",view=None)
 
 @playlists.command(name="remove", description='removes a song from a playlist.')
 async def remove(interaction: discord.Interaction, playlist:str):
