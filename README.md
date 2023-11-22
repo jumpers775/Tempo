@@ -28,7 +28,7 @@ This bot features the following:
 - [X] yt-dlp (greatly improves audio quality, however as of now randomly drops in connection)
 - [X] Spotify support (search, playback, accounts)
 - [X] Update notifications
-- [ ] Pause support
+- [X] Pause support
 - [ ] Loop support
 - [ ] Spotify playlists
 - [ ] YT playlists
