@@ -128,10 +128,12 @@ async def on_ready():
     bot.queue = {}
     bot.shuffle = {}
     bot.queueorder = {}
+    bot.loopmode = {}
     for guild in bot.guilds:
         bot.queue[guild.id] = []
         bot.shuffle[guild.id] = False
         bot.queueorder[guild.id] = []
+        bot.loopmode[guild.id] = 0
 
 
 
@@ -393,8 +395,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
         filename = data['url'] if stream else ytdl.prepare_filename(data)
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
+    
 
-#add a song to the servers queue, and play the queue
 @discord.app_commands.command(name='play', description='plays a song')
 async def play(interaction: discord.Interaction, song:str):
     try:
@@ -548,8 +550,11 @@ class SelectSong(discord.ui.Select):
                         vc.stop()
                     await asyncio.sleep(0.1)
                 #remove the first entry in the queue if not skipped
-                if len(bot.queue[interaction.guild.id]) > 0:
+                if len(bot.queue[interaction.guild.id]) > 0 and bot.loopmode[interaction.guild.id] in [0,2]:
                     if songname == bot.queue[interaction.guild.id][0]:
+                        if bot.loopmode[interaction.guild.id] == 2:
+                            bot.queue[interaction.guild.id].append(bot.queue[interaction.guild.id][0])
+                            bot.queueorder[interaction.guild.id].append(bot.queueorder[interaction.guild.id][0])
                         #remove from queue
                         bot.queue[interaction.guild.id].pop(0)
                         # if shuffle is enable iterate over ordered list to find song and remove it
@@ -578,6 +583,7 @@ async def stop(interaction: discord.Interaction):
         #if it is in a voice channel disconnect, and flush the queue
         bot.queue[interaction.guild.id] = []
         bot.queueorder[interaction.guild.id] = []
+        bot.loopmode[interaction.guild.id] = 0
         await interaction.guild.voice_client.disconnect()
         await interaction.response.send_message("Stopped the music.")
     else:
@@ -707,34 +713,23 @@ async def shuffle_autocomplete(
 # add queue to commands tree
 bot.tree.add_command(queue)
 
-
-# skip command
 @discord.app_commands.command(name="skip", description='skips the current song.')
 async def skip(interaction: discord.Interaction):
-    # make sure there is a second song to play after this one
-    if len(bot.queue[interaction.guild.id]) > 1:
-        #record title to inform what was skipped
-        title = bot.queue[interaction.guild.id][0]
-        # skip the current song
-        bot.queue[interaction.guild.id].pop(0)
-        spot = 0
-        for song in bot.queueorder[interaction.guild.id]:
-            if song == title:
-                bot.queueorder[interaction.guild.id].pop(spot)
-                break
-            else:
-                spot+=1
-        # tell the user that it was done
-        await interaction.response.send_message(f"Skipped {title['title']}")
-    # if only one song, stop playback altogether
-    elif discord.utils.get(bot.voice_clients, guild=interaction.guild) != None:
-        bot.queue[interaction.guild.id] = []
-        bot.queueorder[interaction.guild.id] = []
-        await interaction.guild.voice_client.disconnect()
-        await interaction.response.send_message("Only one song in queue, stopping.")
-    # if neither, no songs are playing
+    vc = discord.utils.get(bot.voice_clients, guild=interaction.guild)
+    if vc != None:
+        if bot.loopmode[interaction.guild.id] == 2:
+            bot.queue[interaction.guild.id].append(bot.queue[interaction.guild.id][0])
+            bot.queueorder[interaction.guild.id].append(bot.queueorder[interaction.guild.id][0])
+            bot.queue[interaction.guild.id].pop(0)
+            bot.queueorder[interaction.guild.id].pop(0)            
+        vc.stop()
+        if bot.queue[interaction.guild.id] == []:
+            await interaction.response.send_message("Skipped, no songs left in queue. Stopping.")
+            return
+        await interaction.response.send_message("Skipped.")
     else:
         await interaction.response.send_message("Nothing is playing.")
+
 bot.tree.add_command(skip)
 
 @discord.app_commands.command(name="pause", description='pauses the current song.')
@@ -766,5 +761,39 @@ async def resume(interaction: discord.Interaction):
     else:
         await interaction.response.send_message("Nothing is playing.")
 bot.tree.add_command(resume)
+
+
+@discord.app_commands.command(name="loop", description='sets the loop mode.')
+async def loop(interaction: discord.Interaction, mode: str):
+    # make sure there is a song playing
+    if len(bot.queue[interaction.guild.id]) > 0:
+        # make sure the mode is valid
+        if mode == "off":
+            bot.loopmode[interaction.guild.id] = 0
+        elif mode == "song":
+            bot.loopmode[interaction.guild.id] = 1
+        elif mode == "queue":
+            bot.loopmode[interaction.guild.id] = 2
+        else:
+            await interaction.response.send_message("Invalid mode. Please use either 'off', 'one', or 'all'.")
+            return
+        # tell the user it was done
+        await interaction.response.send_message(f"Loop mode set to {mode}.")
+    # if not, tell the user
+    else:
+        await interaction.response.send_message("Nothing is playing.")
+@loop.autocomplete('mode')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    statuses = ['off', 'song',"queue"]
+    return [
+        discord.app_commands.Choice(name=status, value=status)
+        for status in statuses if current.lower() in status.lower()
+    ]
+
+
+bot.tree.add_command(loop)
 
 bot.run(token)
