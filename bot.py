@@ -543,7 +543,7 @@ class SelectSong(discord.ui.Select):
                 #play the stream
                 vc.play(song)
                 #wait for the current song to end or get skipped
-                while vc.is_playing():
+                while vc.is_playing() or vc.is_paused():
                     if not songname == bot.queue[interaction.guild.id][0]:
                         vc.stop()
                     await asyncio.sleep(0.1)
@@ -737,5 +737,34 @@ async def skip(interaction: discord.Interaction):
         await interaction.response.send_message("Nothing is playing.")
 bot.tree.add_command(skip)
 
+@discord.app_commands.command(name="pause", description='pauses the current song.')
+async def pause(interaction: discord.Interaction):
+    # make sure there is a song playing
+    if len(bot.queue[interaction.guild.id]) > 0:
+        # get the vc
+        vc = discord.utils.get(bot.voice_clients, guild=interaction.guild)
+        # pause the song
+        vc.pause()
+        # tell the user it was done
+        await interaction.response.send_message("Paused.")
+    # if not, tell the user
+    else:
+        await interaction.response.send_message("Nothing is playing.")
+bot.tree.add_command(pause)
+
+@discord.app_commands.command(name="resume", description='resumes the current song.')
+async def resume(interaction: discord.Interaction):
+    # make sure there is a song playing
+    if len(bot.queue[interaction.guild.id]) > 0:
+        # get the vc
+        vc = discord.utils.get(bot.voice_clients, guild=interaction.guild)
+        # resume the song
+        vc.resume()
+        # tell the user it was done
+        await interaction.response.send_message("Resumed.")
+    # if not, tell the user
+    else:
+        await interaction.response.send_message("Nothing is playing.")
+bot.tree.add_command(resume)
 
 bot.run(token)
