@@ -78,7 +78,8 @@ cursor = db.cursor()
 cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     id INTEGER,
     spotify INTEGER,
-    Authorized BOOL DEFAULT FALSE
+    Authorized BOOL DEFAULT FALSE,
+    Playlists TEXT DEFAULT NULL
 )""")
 # update existing table match this format
 cursor.execute("SELECT * FROM users")
@@ -86,7 +87,9 @@ result = cursor.fetchall()
 if len(result[0]) == 2:
     cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
     db.commit()
-
+if len(result[0]) == 3:
+    cursor.execute("ALTER TABLE users ADD COLUMN Playlists TEXT DEFAULT NULL")
+    db.commit()
 
 db.close()
 
@@ -451,7 +454,7 @@ async def play(interaction: discord.Interaction, song:str):
         if spot_result == None:
             options.append(discord.SelectOption(label=f'{num}) '+ result['title'], description=f'By {result["channel"]}', emoji='🎧'))
         else:
-            options.append(discord.SelectOption(label=f'{num}) '+ result["name"], description=f'By {result["artists"][0]["name"]}', emoji='🎧'))
+            options.append(discord.SelectOption(label=f'{num}) '+ result["name"], description=f'By {", ".join([result["artists"][i]["name"] for i in result["artists"]])}', emoji='🎧'))
         num+=1
 
     #build a view to choose the option
@@ -795,5 +798,213 @@ async def shuffle_autocomplete(
 
 
 bot.tree.add_command(loop)
+
+
+playlists = discord.app_commands.Group(name='playlist', description='playlist related commands.')
+
+@playlists.command(name="create", description='creates a new playlist.')
+async def create(interaction: discord.Interaction, name: str):
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None:
+            playlists=json.load(result[3])
+    if name in playlists:
+        await interaction.response.send_message("You already have a playlist with that name.")
+        return
+    playlists[name] = []
+    cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),interaction.user.id))
+    db.commit()
+    db.close()
+    await interaction.response.send_message(f"Successfully created playlist {name}. add to it with /playlist add {name} <song>")
+
+@playlists.command(name="add", description='adds a song to a playlist.')
+async def create(interaction: discord.Interaction, playlist:str, song: str, platform: str ="youtube"):
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None:
+            playlists=json.loads(result[3])
+    if playlist not in playlists:
+        await interaction.response.send_message("You do not have a playlist with that name.")
+        return
+    selections = []
+    if platform == "youtube":
+        results = YoutubeSearch(song, max_results=10).to_json()
+        results = json.loads(results)
+        results = results['videos']
+    elif platform == "spotify":
+        try:
+            session = lbc.Session.Builder().stored(result[1]).create()
+        except:
+            await interaction.response.send_message("An error occured, please try again.")
+            return
+        oauth_token = session.tokens().get("playlist-read")
+        sp = spotipy.Spotify(auth=oauth_token)
+        results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
+        results = [result | {"user_id": interaction.user.id} for result in results]
+    else:
+        await interaction.response.send_message("Invalid platform. Please use either 'youtube' or 'spotify'.")
+        return
+    options = []
+    for result in results:
+        if platform == "youtube":
+            options.append(discord.SelectOption(label=result['title'], description=f'By {result["channel"]}', emoji='🎧'))
+        else:
+            options.append(discord.SelectOption(label=result["name"], description=f'By {", ".join([result["artists"][i]["name"] for i in result["artists"]])}', emoji='🎧'))
+    view = SelectListView2(options=options, interaction=interaction,results=results,playlist=playlist,platform=platform)
+    try:
+        await interaction.response.send_message(f"select a song to add to {playlist}:",view=view)
+    except:
+        await interaction.response.send_message(content='An error occured. Please Try again.')
+@create.autocomplete('playlist')
+async def mute_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None:
+            playlists=json.loads(result[3])
+    settings = [i for i in playlists]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+
+
+class SelectListView2(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list,playlist: str,platform: str):
+        super().__init__(timeout=timeout)
+        self.add_item(SelectSong2(option=options, interaction=interaction,results=results,playlist=playlist,platform=platform))
+
+class SelectSong2(discord.ui.Select):
+    def __init__(self,option: dict, interaction: discord.Interaction, results: list,playlist: str,platform: str):
+        #set options to the possibilities for the song
+        self.music_options=results
+        #allow access to the original interaction
+        self.original_interaction = interaction
+        # add playlist and platform
+        self.playlist = playlist
+        self.platform = platform
+        # ask for an option to be selected
+        super().__init__(placeholder="Select an option",options=option)
+    async def callback(self, interaction: discord.Interaction):
+        #check the selection against the list
+        option = self.music_options[int(self.values[0][0])-1]
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (self.original_interaction.user.id,))
+        result = cursor.fetchone()
+        playlists = {}
+        if result != None:
+            playlists=json.loads(result[3])
+        if self.platform == "youtube":
+            url = 'https://www.youtube.com' + option['url_suffix']
+            title = option['title']
+            entry = {"url": url,"title": title,"platform": "youtube","auth": None}
+        elif self.platform == "spotify":
+            url = option['uri']
+            title = option['name']
+            entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
+        playlists[self.playlist].append(entry)
+        await self.original_interaction.edit_original_response(content=f"Successfully added {title} to {self.playlist}.")
+
+@playlists.command(name="remove", description='removes a song from a playlist.')
+async def remove(interaction: discord.Interaction, playlist:str):
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None:
+            playlists=json.loads(result[3])
+    if playlist not in playlists:
+        await interaction.response.send_message("You do not have a playlist with that name.")
+        return
+    selections = []
+    for song in playlists[playlist]:
+        selections.append(discord.SelectOption(label=song['title'], emoji='🎧'))
+    selections.append(discord.SelectOption(label="Cancel", emoji='❌'))
+    view = SelectListView3(options=selections, interaction=interaction,playlist=playlist)
+    try:
+        await interaction.response.send_message(f"select a song to remove from {playlist}:",view=view)
+    except:
+        await interaction.response.send_message(content='An error occured. Please Try again.')
+
+@remove.autocomplete('playlist')
+async def mute_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None:
+            playlists=json.loads(result[3])
+    settings = [i for i in playlists]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+    
+
+
+
+
+class SelectListView3(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list,playlist: str):
+        super().__init__(timeout=timeout)
+        self.add_item(SelectSong2(option=options, interaction=interaction,results=results,playlist=playlist))
+
+class SelectSong3(discord.ui.Select):
+    def __init__(self,option: dict, interaction: discord.Interaction, results: list,playlist: str):
+        #set options to the possibilities for the song
+        self.music_options=results
+        #allow access to the original interaction
+        self.original_interaction = interaction
+        # add playlist
+        self.playlist = playlist
+        # ask for an option to be selected
+        super().__init__(placeholder="Select an option",options=option)
+    async def callback(self, interaction: discord.Interaction):
+        #check the selection against the list
+        option = self.music_options[int(self.values[0][0])-1]
+
+        if option['label'] == "Cancel":
+            await self.original_interaction.edit_original_response(content=f"OK, Cancelled.")
+            return
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (self.original_interaction.user.id,))
+        result = cursor.fetchone()
+        # can assume playlist exists as it is checked before this is called
+        playlists=json.loads(result[3])
+        for song in playlists[self.playlist]:
+            if song['title'] == option['label']:
+                playlists[self.playlist].remove(song)
+        await self.original_interaction.edit_original_response(content=f"Successfully removed {option['label']} from {self.playlist}.")
+
+
+
+
+bot.tree.add_command(playlists)
+
 
 bot.run(token)
