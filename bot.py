@@ -605,6 +605,8 @@ async def view(interaction: discord.Interaction):
     for song in bot.queue[interaction.guild.id]:
         response.add_field(name=str(i) + f".{' **(Current song)**' if i == 1 else ''}", value=song["title"], inline=False)
         i+=1
+    if len(bot.queue[interaction.guild.id]) == 0:
+        response.add_field(name="Nothing is playing.", value="", inline=False)
     # send response
     await interaction.response.send_message(embed=response)
 
