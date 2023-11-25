@@ -20,6 +20,7 @@ import os
 version = "1.1.2"
 # so that the owner is only notified once
 ownerupdated = False
+updateversion = "1.1.2"
 
 
 # load settings
@@ -83,6 +84,8 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS users(
 # update existing table match this format
 cursor.execute("SELECT * FROM users")
 result = cursor.fetchall()
+if len(result) == 0:
+    raise ValueError("User database appears to be corrupt.")
 if len(result[0]) == 2:
     cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
     db.commit()
@@ -114,7 +117,8 @@ async def updatecheck():
             currentversion = version.split(".")
             if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
                 print(f"Update Available!\n{version} --> {newestversion}")
-                if bot.settings["updateDM"] and not ownerupdated:
+                if bot.settings["updateDM"] and (not ownerupdated or updateversion != newestversion):
+                    updateversion = newestversion
                     app_info = await bot.application_info()
                     user = bot.get_user(app_info.owner.id)
                     await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
