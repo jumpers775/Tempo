@@ -78,11 +78,12 @@ cursor = db.cursor()
 
 columns = [["id","INTEGER DEFAULT NULL"],["spotify","INTEGER DEFAULT NULL"],["Authorized","BOOL DEFAULT FALSE"]]
 
-cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-    id INTEGER DEFAULT NULL,
-    spotify INTEGER DEFAULT NULL,
-    Authorized BOOL DEFAULT FALSE
-)""")
+entry = "CREATE TABLE IF NOT EXISTS users("
+for i in range(len(columns)):
+  entry+=columns[i][0] + " " + columns[i][1] + ("," if i!=len(columns)-1 else ")")
+
+cursor.execute(entry)
+
 # update existing table match this format
 cursor.execute("PRAGMA table_info(users)")
 result = cursor.fetchall()
