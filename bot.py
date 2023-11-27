@@ -84,19 +84,16 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS users(
     Authorized BOOL DEFAULT FALSE
 )""")
 # update existing table match this format
-cursor.execute("SELECT * FROM users")
+cursor.execute("PRAGMA table_info(users)")
 result = cursor.fetchall()
-if len(result) == 0:
-    cursor.execute("PRAGMA table_info(users)")
-    result = cursor.fetchall()
-    currentcolumns = [i[1] for i in result]
-    newcolumns = [i for i in columns if i[0] not in currentcolumns]
-    if [i[0] for i in columns] != currentcolumns:
-        print("Updating database...")
-        for column in newcolumns:
-            cursor.execute(f"ALTER TABLE users ADD COLUMN {column[0]} {column[1]}")
-        db.commit()
-        print("Database updated.")
+currentcolumns = [i[1] for i in result]
+newcolumns = [i for i in columns if i[0] not in currentcolumns]
+if [i[0] for i in columns] != currentcolumns:
+    print("Updating database...")
+    for column in newcolumns:
+        cursor.execute(f"ALTER TABLE users ADD COLUMN {column[0]} {column[1]}")
+    db.commit()
+    print("Database updated.")
 db.close()
 
 
