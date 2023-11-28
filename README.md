@@ -1,6 +1,26 @@
 # Tempo
  Rythm clone, a bot for streaming music.
 
+## Info on V2
+
+V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The following is planned:
+
+- [ ] Modularity (using cogs)
+- [ ] Plugins 
+    - Each platform will be a plugin
+          - This means more platforms can be supported easily
+    - There will be a plugin API for custom plugins
+- [ ] Speech recognition (allows you to skip/add songs/etc using your voice while the bot is playing)
+    - Bot will listen for a keyword, then once it hears it will respond to the user 
+    - I plan on doing this with a combo between whisper and an LLM (llama2-7b-gguf?)
+    - User will be able tro configure which models are in use
+    - Fully disableable
+    - Must be runnable on a Rasberry pi 4 with 4GB of ram (should be possible)
+- [ ] Native playlist support
+      - This must include the ability to access playlists on supported platforms
+- [ ] Update utility within the bot (will require owner to press a button)
+- [ ] Nicer UX
+
 ## dependencies
 to install the dependencies run:
 `pip install pynacl discord asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp`
