@@ -17,10 +17,10 @@ import aiohttp
 import os
 
 
-version = "1.1.2"
+version = "1.1.4"
 # so that the owner is only notified once
 ownerupdated = False
-updateversion = "1.1.2"
+updateversion = version
 
 
 # load settings
