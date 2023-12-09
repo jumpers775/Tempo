@@ -423,6 +423,7 @@ async def play(interaction: discord.Interaction, song:str):
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id if not bot.settings["globalSpotify"] else 0,))
     spot_result = cursor.fetchone()
     spot = spot_result!=None
+    result = None
     if spot_result == None:
         # search for the song on youtube
         results = YoutubeSearch(song, max_results=10).to_json()
