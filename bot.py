@@ -433,13 +433,12 @@ async def play(interaction: discord.Interaction, song:str):
         if spot_result[2] == True:
             cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
             spot_result = cursor.fetchone()
-            if spot_result == None:
-                #use youtube if spotify acc is broken
-                results = YoutubeSearch(song, max_results=10).to_json()
-                results = json.loads(results)
-                results = results['videos']
+            #use youtube if spotify acc is broken
+            results = YoutubeSearch(song, max_results=10).to_json()
+            results = json.loads(results)
+            results = results['videos']
 
-                cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
+            cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
         else: 
             # search for the song on spotify
             try:
