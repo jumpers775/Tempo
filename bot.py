@@ -433,24 +433,22 @@ async def play(interaction: discord.Interaction, song:str):
         if spot_result[2] == True:
             cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
             spot_result = cursor.fetchone()
-            #use youtube if spotify acc is broken
-            results = YoutubeSearch(song, max_results=10).to_json()
-            results = json.loads(results)
-            results = results['videos']
-
-            cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
-        else: 
-            # search for the song on spotify
-            try:
-                session = lbc.Session.Builder().stored(spot_result[1]).create()
-            except:
-                await interaction.edit_original_response(content="An error occured, please try again.")
+            if spot_result == None:
+                #error youtube if spotify acc is removed
+                await interaction.edit_original_response(content="The user who Authorized your spotify account has removed their spotify account. Youtube is now the default provider.")
+                cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
                 return
-            oauth_token = session.tokens().get("playlist-read")
-            sp = spotipy.Spotify(auth=oauth_token)
-            results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
-            results = [result | {"user_id": interaction.user.id} for result in results]
-            spot_authenticated = True
+        # search for the song on spotify
+        try:
+            session = lbc.Session.Builder().stored(spot_result[1]).create()
+        except:
+            await interaction.edit_original_response(content="An error occured, please try again.")
+            return
+        oauth_token = session.tokens().get("playlist-read")
+        sp = spotipy.Spotify(auth=oauth_token)
+        results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
+        results = [result | {"user_id": interaction.user.id} for result in results]
+        spot_authenticated = True
     db.close()
     #build an option for each song
     options = []
