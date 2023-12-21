@@ -30,6 +30,6 @@ This bot features the following:
 - [X] Update notifications
 - [X] Pause support
 - [X] Loop support
-- [ ] Spotify playlists
+- [X] Spotify playlists
 - [ ] YT playlists
-- [ ] inbuilt playlists
+- [X] inbuilt playlists
