@@ -18,9 +18,10 @@ import os
 import datetime
 
 
-version = "1.1.2"
+version = "1.1.4"
 # so that the owner is only notified once
 ownerupdated = False
+updateversion = version
 
 
 # load settings
@@ -76,23 +77,25 @@ db = sqlite3.connect("userdata.db")
 
 cursor = db.cursor()
 
-cursor.execute("""CREATE TABLE IF NOT EXISTS users(
-    id INTEGER,
-    spotify INTEGER,
-    Authorized BOOL DEFAULT FALSE,
-    Playlists TEXT DEFAULT NULL
-)""")
-# update existing table match this format
-cursor.execute("SELECT * FROM users")
-result = cursor.fetchall()
-if result != []:
-    if len(result[0]) == 2:
-        cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
-        db.commit()
-    if len(result[0]) == 3:
-        cursor.execute("ALTER TABLE users ADD COLUMN Playlists TEXT DEFAULT NULL")
-        db.commit()
+columns = [["id","INTEGER DEFAULT NULL"],["spotify","INTEGER DEFAULT NULL"],["Authorized","BOOL DEFAULT FALSE"],["Playlists","TEXT DEFAULT NULL"]]
 
+entry = "CREATE TABLE IF NOT EXISTS users("
+for i in range(len(columns)):
+  entry+=columns[i][0] + " " + columns[i][1] + ("," if i!=len(columns)-1 else ")")
+
+cursor.execute(entry)
+
+# update existing table match this format
+cursor.execute("PRAGMA table_info(users)")
+result = cursor.fetchall()
+currentcolumns = [i[1] for i in result]
+newcolumns = [i for i in columns if i[0] not in currentcolumns]
+if [i[0] for i in columns] != currentcolumns:
+    print("Updating database...")
+    for column in newcolumns:
+        cursor.execute(f"ALTER TABLE users ADD COLUMN {column[0]} {column[1]}")
+    db.commit()
+    print("Database updated.")
 db.close()
 
 
@@ -119,7 +122,8 @@ async def updatecheck():
             currentversion = version.split(".")
             if True in [int(latestversion[i]) > int(currentversion[i]) for i in range(len(currentversion))]:
                 print(f"Update Available!\n{version} --> {newestversion}")
-                if bot.settings["updateDM"] and not ownerupdated:
+                if bot.settings["updateDM"] and (not ownerupdated or updateversion != newestversion):
+                    updateversion = newestversion
                     app_info = await bot.application_info()
                     user = bot.get_user(app_info.owner.id)
                     await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
@@ -454,24 +458,21 @@ async def play(interaction: discord.Interaction, song:str, platform:str = None):
             cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
             spot_result = cursor.fetchone()
             if spot_result == None:
-                #use youtube if spotify acc is broken
-                results = YoutubeSearch(song, max_results=10).to_json()
-                results = json.loads(results)
-                results = results['videos']
-
+                #error youtube if spotify acc is removed
+                await interaction.edit_original_response(content="The user who Authorized your spotify account has removed their spotify account. Youtube is now the default provider.")
                 cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
-        else: 
-            # search for the song on spotify
-            try:
-                session = lbc.Session.Builder().stored(spot_result[1]).create()
-            except:
-                await interaction.edit_original_response(content="An error occured, please try again.")
                 return
-            oauth_token = session.tokens().get("playlist-read")
-            sp = spotipy.Spotify(auth=oauth_token)
-            results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
-            results = [result | {"user_id": interaction.user.id} for result in results]
-            spot_authenticated = True
+        # search for the song on spotify
+        try:
+            session = lbc.Session.Builder().stored(spot_result[1]).create()
+        except:
+            await interaction.edit_original_response(content="An error occured, please try again.")
+            return
+        oauth_token = session.tokens().get("playlist-read")
+        sp = spotipy.Spotify(auth=oauth_token)
+        results = sp.search(q=song, type='track', limit=10)["tracks"]["items"]
+        results = [result | {"user_id": interaction.user.id} for result in results]
+        spot_authenticated = True
     db.close()
     #build an option for each song
     options = []
@@ -659,6 +660,10 @@ async def view(interaction: discord.Interaction):
     response = discord.Embed(title="Queue:", description=f"Shuffle is {'on' if bot.shuffle[interaction.guild.id] else 'off'}", color=0x336EFF)
     i = 1
     total = 0
+    if len(bot.queue[interaction.guild.id]) == 0:
+        response.add_field(name="Nothing is playing.", value="", inline=False)
+        await interaction.response.send_message(embed=response)
+        return
     for song in bot.queue[interaction.guild.id]:
         if i <= 25:
             response.add_field(name=str(i) + f".{' **(Current song)**' if i == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
