@@ -18,7 +18,7 @@ import os
 import datetime
 
 
-version = "1.1.4"
+version = "1.2.0"
 # so that the owner is only notified once
 ownerupdated = False
 updateversion = version
