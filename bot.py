@@ -15,6 +15,7 @@ from librespot.audio.decoders import AudioQuality, VorbisOnlyAudioQuality
 import spotipy
 import aiohttp
 import os
+import datetime
 
 
 version = "1.1.2"
@@ -84,12 +85,13 @@ cursor.execute("""CREATE TABLE IF NOT EXISTS users(
 # update existing table match this format
 cursor.execute("SELECT * FROM users")
 result = cursor.fetchall()
-if len(result[0]) == 2:
-    cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
-    db.commit()
-if len(result[0]) == 3:
-    cursor.execute("ALTER TABLE users ADD COLUMN Playlists TEXT DEFAULT NULL")
-    db.commit()
+if result != []:
+    if len(result[0]) == 2:
+        cursor.execute("ALTER TABLE users ADD COLUMN Authorized BOOL DEFAULT FALSE")
+        db.commit()
+    if len(result[0]) == 3:
+        cursor.execute("ALTER TABLE users ADD COLUMN Playlists TEXT DEFAULT NULL")
+        db.commit()
 
 db.close()
 
@@ -234,14 +236,13 @@ spot = discord.app_commands.Group(name='spot', description='Spotify related comm
 
 @spot.command(name='auth', description='authenticates a spotify premium account. MAKE SURE YOU TRUST THE BOT OWNER.')
 async def auth(interaction: discord.Interaction, email:str, password:str):
-    
     db = sqlite3.connect("userdata.db")
 
     cursor = db.cursor()
 
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))    
     result = cursor.fetchone()
-    if result == None:
+    if result[1] == None:
         try:
             session = lbc.Session.Builder() \
             .user_pass(email,password) \
@@ -251,9 +252,17 @@ async def auth(interaction: discord.Interaction, email:str, password:str):
             await interaction.response.send_message("Invalid credentials.", ephemeral=True)
             return
         access_token = session.stored()
-        cursor.execute("INSERT INTO users VALUES (?,?,?)", (interaction.user.id,access_token,False))
+        cursor.execute("UPDATE users SET spotify = ?, Authorized = ? WHERE id = ?", (access_token,False,interaction.user.id))
         db.commit()
         db.close()
+
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        print(result)
+        db.close()
+
     else:
         await interaction.response.send_message("You have already authenticated a spotify account. Use /spotrm to remove it", ephemeral=True)
         return
@@ -279,9 +288,9 @@ async def rm(interaction: discord.Interaction):
             view = SelectButtonView(options=["Yes","No"], interaction=interaction)
             await interaction.response.send_message("You are currently authorized to use someone elses spotify account. If you remove your account you will need to be added again by them.", ephemeral=True,view=view)
             return
-        cursor.execute("DELETE FROM users WHERE id = ?", (interaction.user.id,))
+        cursor.execute("UPDATE users SET spotify = ?, Authorized = ? WHERE id = ?", (None,False,interaction.user.id))
         db.commit()
-        db.close()
+        db.close()        
     await interaction.response.send_message("Successfully removed spotify account.",ephemeral=True)
 
 class SelectButtonView(discord.ui.View):
@@ -300,7 +309,7 @@ class ButtonClass(discord.ui.Button):
         if self.label == "Yes":
             db = sqlite3.connect("userdata.db")
             cursor = db.cursor()
-            cursor.execute("DELETE FROM users WHERE id = ?", (self.original_interaction.user.id,))
+            cursor.execute("UPDATE users SET spotify = ?, Authorized = ? WHERE id = ?", (None,False,self.original_interaction.user.id))
             db.commit()
             db.close()
             await self.original_interaction.edit_original_response(content="Successfully removed spotify account.",view=None)
@@ -317,10 +326,16 @@ async def trustuser(interaction: discord.Interaction,member: discord.Member):
     if result == None:
         await interaction.response.send_message("You have not authenticated a spotify account.", ephemeral=True)
         return
-        db = sqlite3.connect("userdata.db")
     db = sqlite3.connect("userdata.db")
     cursor = db.cursor()
-    cursor.execute("INSERT INTO users VALUES (?,?,?)", (member.id,interaction.user.id,True))
+    # get users values
+    cursor.execute("SELECT * FROM users WHERE id = ?", (member.id,))
+    useracc = cursor.fetchone()
+    playlists = []
+    if useracc != None:
+        if useracc[3] != None:
+            playlists = json.loads(useracc[3])
+    cursor.execute("INSERT INTO users VALUES (?,?,?,?)", (member.id,interaction.user.id,True, json.dumps(playlists)))
     db.commit()
     db.close()
     await interaction.response.send_message(f"Successfully authorized {member.mention} to your spotify account.")
@@ -341,7 +356,7 @@ async def rmuser(interaction: discord.Interaction,member: discord.Member):
     cursor.execute("SELECT * FROM users WHERE id = ?", (member.id,))    
     useracc = cursor.fetchone()
     if useracc[1] == interaction.user.id and useracc[2] == True:
-        cursor.execute("DELETE FROM users WHERE id = ?", (member.id,))
+        cursor.execute("INSERT OR REPLACE INTO users (id, spotify, Authorized, Playlists) VALUES (?,?,?,?)", (member.id, None, False, useracc[3]))
         db.commit()
         db.close()
         await interaction.response.send_message(f"Successfully removed {member.mention}'s access to your spotify account.")
@@ -401,7 +416,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     
 
 @discord.app_commands.command(name='play', description='plays a song')
-async def play(interaction: discord.Interaction, song:str):
+async def play(interaction: discord.Interaction, song:str, platform:str = None):
     try:
         channel = interaction.user.voice.channel
     except:
@@ -417,9 +432,19 @@ async def play(interaction: discord.Interaction, song:str):
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id if not bot.settings["globalSpotify"] else 0,))
     spot_result = cursor.fetchone()
-    spot = spot_result!=None
+    if spot_result != None:
+        if spot_result[3] != None and spot_result[3] != "{}":
+            spot = True
+    if platform != None:
+        if platform.lower() == "spotify":
+            spot = True
+        elif platform.lower() == "youtube":
+            spot = False
+        else:
+            await interaction.edit_original_response(content="Invalid platform. Please use either 'spotify' or 'youtube'.")
+            return
     results = None
-    if spot_result == None:
+    if not spot:
         # search for the song on youtube
         results = YoutubeSearch(song, max_results=10).to_json()
         results = json.loads(results)
@@ -452,10 +477,10 @@ async def play(interaction: discord.Interaction, song:str):
     options = []
     num = 1
     for result in results:
-        if spot_result == None:
+        if not spot:
             options.append(discord.SelectOption(label=f'{num}) '+ result['title'], description=f'By {result["channel"]}', emoji='🎧'))
         else:
-            options.append(discord.SelectOption(label=f'{num}) '+ result["name"], description=f'By {", ".join([result["artists"][i]["name"] for i in result["artists"]])}', emoji='🎧'))
+            options.append(discord.SelectOption(label=f'{num}) '+ result["name"], description=f'By {", ".join([result["artists"][i]["name"] for i in range(len(result["artists"]))])}', emoji='🎧'))
         num+=1
 
     #build a view to choose the option
@@ -467,6 +492,29 @@ async def play(interaction: discord.Interaction, song:str):
         await interaction.edit_original_response(content=message,view=view)
     except:
         await interaction.edit_original_response(content='An error occured. Please Try again.')
+@play.autocomplete('platform')
+async def create_autocomplete2(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    spotify = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            results=json.loads(result[3])
+            spotify = result[1] != None
+    db.close()
+
+    platforms = ["youtube"]
+    if spotify or bot.settings["globalSpotify"]:
+        platforms.append("spotify")
+    return [
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
+    ]
 
 #view class to select the correct song.
 class SelectListView(discord.ui.View):
@@ -493,15 +541,19 @@ class SelectSong(discord.ui.Select):
             url = option['uri']
             # set the title
             title = option['name']
+            artists = ", ".join([option["artists"][i]["name"] for i in range(len(option["artists"]))])
             # make queue entry
-            entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
-        else:
+            entry = {"url": url,"title": title, "artist": artists, "platform": "spotify","auth": option["user_id"], "length": option["duration_ms"]}
+        else: # youtube
+            #song length
+            duration = option['duration'].split(":")
+            duration = (int(duration[0])*60 + int(duration[1]))*1000
             # set the url
             url = 'https://www.youtube.com' + option['url_suffix']
             # set the title
             title = option['title']
             # make queue entry
-            entry = {"url": url,"title": title,"platform": "youtube","auth": None}
+            entry = {"url": url,"title": title, "artist": option["channel"], "platform": "youtube","auth": None, "length": duration}
         #insert in a random spot non-current if shuffle is enabled, at the end if disabled
         if bot.shuffle[interaction.guild.id] and len(bot.queue[interaction.guild.id]) > 1:
             spot = random.randint(1,len(bot.queue[interaction.guild.id]))
@@ -602,19 +654,64 @@ queue = discord.app_commands.Group(name='queue', description='queue related comm
 # show the current queue
 @queue.command(name="view", description='shows the current queue')
 async def view(interaction: discord.Interaction):
-    #build a list of songs
-    #each song is stored as a url, so iterate over them and get info, add it to an embed.
+    # build a list of songs
+    # each song is stored as a url, so iterate over them and get info, add it to an embed.
     response = discord.Embed(title="Queue:", description=f"Shuffle is {'on' if bot.shuffle[interaction.guild.id] else 'off'}", color=0x336EFF)
     i = 1
+    total = 0
     for song in bot.queue[interaction.guild.id]:
-        response.add_field(name=str(i) + f".{' **(Current song)**' if i == 1 else ''}", value=song["title"], inline=False)
-        i+=1
+        if i <= 25:
+            response.add_field(name=str(i) + f".{' **(Current song)**' if i == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
+        i += 1
+        total += song['length']
+    response.set_footer(text=f"Total Queue Length: {str(datetime.timedelta(milliseconds=(total-(total%1000))))} seconds")
     # send response
-    await interaction.response.send_message(embed=response)
+    view = SelectButtonView2(options=["Previous","Next"], interaction=interaction, embed=response)
+    await interaction.response.send_message(embed=response,view=view)
+
+class SelectButtonView2(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: list, interaction: discord.Interaction, embed: discord.Embed):
+        super().__init__(timeout=timeout)
+        for option in options:
+            self.add_item(ButtonClass2(label=option, interaction=interaction, embed=embed))
+
+class ButtonClass2(discord.ui.Button):
+    def __init__(self, label: str, interaction: discord.Interaction, embed: discord.Embed):
+        # Allow access to the original interaction
+        self.original_interaction = interaction
+        self.embed = embed
+        super().__init__(label=label)
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        if self.label == "Next":
+            last_field = self.embed.fields[-1]
+            num = int(last_field.name.split(".")[0])
+            if num == len(bot.queue[interaction.guild.id]):
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                if num+i < len(bot.queue[interaction.guild.id]):
+                    song = bot.queue[interaction.guild.id][num+i]
+                    self.embed.add_field(name=str(num+i+1) + f".{' **(Current song)**' if num+i+1 == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
+            view = SelectButtonView2(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed)
+        else:
+            first_field = self.embed.fields[0]
+            num = int(first_field.name.split(".")[0])-1
+            if num-25 < 0:
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                if num-25+i >= 0:
+                    song = bot.queue[interaction.guild.id][num-25+i]
+                    self.embed.add_field(name=str(num-24+i) + f".{' **(Current song)**' if num-24+i == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
+            view = SelectButtonView2(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed)
 
 #remove a song from the queue
 @queue.command(name="del", description='removes a song from the queue')
-async def view(interaction: discord.Interaction, spot: int):
+async def delete(interaction: discord.Interaction, spot: int):
     #1 is subtracted as 1 is added when the queue is veiwed to avoid starting at 0.
     spot-=1
     # make sure songs are playing
@@ -728,6 +825,7 @@ async def skip(interaction: discord.Interaction):
             bot.queueorder[interaction.guild.id].pop(0)            
         vc.stop()
         if bot.queue[interaction.guild.id] == []:
+            await vc.disconnect()
             await interaction.response.send_message("Skipped, no songs left in queue. Stopping.")
             return
         await interaction.response.send_message("Skipped.")
@@ -811,26 +909,28 @@ async def create(interaction: discord.Interaction, name: str):
     result = cursor.fetchone()
     playlists = {}
     if result != None:
-        if result[3] != None:
-            playlists=json.load(result[3])
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
     if name in playlists:
         await interaction.response.send_message("You already have a playlist with that name.")
         return
     playlists[name] = []
     cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),interaction.user.id))
+    if cursor.rowcount == 0:
+        cursor.execute("INSERT INTO users (id, Playlists) VALUES (?, ?)", (interaction.user.id, json.dumps(playlists)))
     db.commit()
     db.close()
     await interaction.response.send_message(f"Successfully created playlist {name}. add to it with /playlist add {name} <song>")
 
 @playlists.command(name="add", description='adds a song to a playlist.')
-async def create(interaction: discord.Interaction, playlist:str, song: str, platform: str):
+async def add(interaction: discord.Interaction, playlist:str, song: str, platform: str):
     db = sqlite3.connect("userdata.db")
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
     result = cursor.fetchone()
     playlists = {}
     if result != None:
-        if result[3] != None:
+        if result[3] != None and result[3] != "{}":
             playlists=json.loads(result[3])
     if playlist not in playlists:
         await interaction.response.send_message("You do not have a playlist with that name.")
@@ -854,17 +954,21 @@ async def create(interaction: discord.Interaction, playlist:str, song: str, plat
         await interaction.response.send_message("Invalid platform. Please use either 'youtube' or 'spotify'.")
         return
     options = []
-    for i in range(len(results)):
+    for i in range(5):
         if platform == "youtube":
-            options.append(discord.SelectOption(label=str(i+1) + ") " + results[i]['title'], description=f'By {results[i]["channel"]}', emoji='🎧'))
+            title = results[i]['title'][:80]
+            channel = results[i]['channel'][:80]
+            options.append(discord.SelectOption(label=str(i+1) + ") " + title, description=f'By {channel}', emoji='🎧'))
         else:
-            options.append(discord.SelectOption(label=str(i+1) + ") " + results[i]["name"], description=f'By {", ".join([results[i]["artists"][j]["name"] for j in results[i]["artists"]])}', emoji='🎧'))
+            name = results[i]["name"][:80]
+            artists = ", ".join([artist["name"] for artist in results[i]["artists"]])[:80]
+            options.append(discord.SelectOption(label=str(i+1) + ") " + name, description=f'By {artists}', emoji='🎧'))
     view = SelectListView2(options=options, interaction=interaction,results=results,playlist=playlist,platform=platform)
     try:
         await interaction.response.send_message(f"select a song to add to {playlist}:",view=view)
     except:
         await interaction.response.send_message(content='An error occured. Please Try again.')
-@create.autocomplete('playlist')
+@add.autocomplete('playlist')
 async def create_autocomplete(
     interaction: discord.Interaction,
     current: str,
@@ -873,18 +977,14 @@ async def create_autocomplete(
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
     result = cursor.fetchone()
-    playlists = {}
-    if result != None:
-        if result[3] != None:
-            playlists=list(json.loads(result[3]).keys())
     db.close()
-    print(playlists)
-    playlists = [i for i in playlists]
+    print(result[3])
+    playlists = [i for i in json.loads(result[3])]
     return [
         discord.app_commands.Choice(name=playlist, value=playlist)
-        for playlist in playlists if current.lower() in playlists.lower()
+        for playlist in playlists if current.lower() in playlist.lower()
     ]
-@create.autocomplete('platform')
+@add.autocomplete('platform')
 async def create_autocomplete2(
     interaction: discord.Interaction,
     current: str,
@@ -895,24 +995,22 @@ async def create_autocomplete2(
     result = cursor.fetchone()
     spotify = {}
     if result != None:
-        if result[3] != None:
+        if result[3] != None and result[3] != "{}":
             results=json.loads(result[3])
-            spotify = results[1] != None
+            spotify = result[1] != None
     db.close()
 
-    print(spotify)
-    playlists = ["youtube"]
+    platforms = ["youtube"]
     if spotify or bot.settings["globalSpotify"]:
-        playlists.append("spotify")
-    print(playlists)
+        platforms.append("spotify")
     return [
-        discord.app_commands.Choice(name=playlist, value=playlist)
-        for playlist in playlists if current.lower() in playlists.lower()
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
     ]
 
 
 class SelectListView2(discord.ui.View):
-    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list,playlist: str,platform: str):
+    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list, playlist: str, platform: str):
         super().__init__(timeout=timeout)
         self.add_item(SelectSong2(option=options, interaction=interaction,results=results,playlist=playlist,platform=platform))
 
@@ -929,7 +1027,6 @@ class SelectSong2(discord.ui.Select):
         super().__init__(placeholder="Select an option",options=option)
     async def callback(self, interaction: discord.Interaction):
         #check the selection against the list
-        print(self.values[0])
         option = self.music_options[int(self.values[0][0])-1]
         db = sqlite3.connect("userdata.db")
         cursor = db.cursor()
@@ -941,12 +1038,18 @@ class SelectSong2(discord.ui.Select):
         if self.platform == "youtube":
             url = 'https://www.youtube.com' + option['url_suffix']
             title = option['title']
-            entry = {"url": url,"title": title,"platform": "youtube","auth": None}
+            duration = option['duration'].split(":")
+            duration = (int(duration[0])*60 + int(duration[1]))*1000
+            entry = {"url": url,"title": title, "artist": option["channel"], "platform": "youtube","auth": None, "length": duration}
         elif self.platform == "spotify":
             url = option['uri']
             title = option['name']
-            entry = {"url": url,"title": title,"platform": "spotify","auth": option["user_id"]}
+            artists = ", ".join([option["artists"][i]["name"] for i in range(len(option["artists"]))])
+            entry = {"url": url,"title": title,"artist": artists, "platform": "spotify","auth": option["user_id"], "length": option["duration_ms"]}
         playlists[self.playlist].append(entry)
+        cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),self.original_interaction.user.id))
+        db.commit()
+        db.close()
         await self.original_interaction.edit_original_response(content=f"Successfully added {title} to {self.playlist}.",view=None)
 
 @playlists.command(name="remove", description='removes a song from a playlist.')
@@ -955,12 +1058,15 @@ async def remove(interaction: discord.Interaction, playlist:str):
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
     result = cursor.fetchone()
-    playlists = {}
+    playlists = []
     if result != None:
-        if result[3] != None:
+        if result[3] != None and result[3] != "{}":
             playlists=json.loads(result[3])
     if playlist not in playlists:
         await interaction.response.send_message("You do not have a playlist with that name.")
+        return
+    if playlists[playlist] == []:
+        await interaction.response.send_message("You do not have any songs in that playlist.")
         return
     selections = []
     for song in playlists[playlist]:
@@ -983,7 +1089,7 @@ async def mute_autocomplete(
     result = cursor.fetchone()
     playlists = {}
     if result != None:
-        if result[3] != None:
+        if result[3] != None and result[3] != "{}":
             playlists=json.loads(result[3])
     settings = [i for i in playlists]
     return [
@@ -993,18 +1099,14 @@ async def mute_autocomplete(
 
     
 
-
-
-
 class SelectListView3(discord.ui.View):
-    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,results: list,playlist: str):
+    def __init__(self, *, timeout = 180, options: dict, interaction: discord.Interaction,playlist: str):
         super().__init__(timeout=timeout)
-        self.add_item(SelectSong2(option=options, interaction=interaction,results=results,playlist=playlist))
+        self.add_item(SelectSong3(option=options, interaction=interaction,playlist=playlist))
 
 class SelectSong3(discord.ui.Select):
-    def __init__(self,option: dict, interaction: discord.Interaction, results: list,playlist: str):
+    def __init__(self,option: dict, interaction: discord.Interaction,playlist: str):
         #set options to the possibilities for the song
-        self.music_options=results
         #allow access to the original interaction
         self.original_interaction = interaction
         # add playlist
@@ -1013,10 +1115,9 @@ class SelectSong3(discord.ui.Select):
         super().__init__(placeholder="Select an option",options=option)
     async def callback(self, interaction: discord.Interaction):
         #check the selection against the list
-        option = self.music_options[int(self.values[0][0])-1]
-
-        if option['label'] == "Cancel":
-            await self.original_interaction.edit_original_response(content=f"OK, Cancelled.")
+        option = [option.label for option in self.options if option.label == self.values[0]][0]
+        if option == "Cancel":
+            await self.original_interaction.edit_original_response(content=f"OK, Cancelled.",view=None)
             return
         db = sqlite3.connect("userdata.db")
         cursor = db.cursor()
@@ -1025,13 +1126,401 @@ class SelectSong3(discord.ui.Select):
         # can assume playlist exists as it is checked before this is called
         playlists=json.loads(result[3])
         for song in playlists[self.playlist]:
-            if song['title'] == option['label']:
+            if song['title'] == option:
                 playlists[self.playlist].remove(song)
-        await self.original_interaction.edit_original_response(content=f"Successfully removed {option['label']} from {self.playlist}.")
+                # update database
+                cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),self.original_interaction.user.id))
+                db.commit()
+                db.close()
+        await self.original_interaction.edit_original_response(content=f"Successfully removed {option} from {self.playlist}.",view=None)
+
+
+@playlists.command(name="list", description='lists playlists or songs in a playlist.')
+async def list_em(interaction: discord.Interaction, playlist:str = None):
+    if playlist == None:
+        # create embed with all playlists, and their lengths, then send it
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        playlists = {}
+        if result != None:
+            if result[3] != None and result[3] != "{}":
+                playlists=json.loads(result[3])
+        if playlists == {}:
+            await interaction.response.send_message("You do not have any playlists.")
+            return
+        response = discord.Embed(title="Playlists:", color=0x336EFF)
+        num = 0
+        for playlist in playlists:
+            total = 0
+            for song in playlists[playlist]:
+                total += song["length"]
+            num+=1
+            if num <= 25:
+                response.add_field(name=str(num) + ". " + playlist, value=f"{len(playlists[playlist])} song{"s" if len(playlists[playlist]) > 1 else ""}\nTotal Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}", inline=False)
+        view = SelectButtonView3(options=["Previous","Next"], interaction=interaction, embed=response)
+        await interaction.response.send_message(embed=response,view=view)
+    else:
+        # create embed with all songs in playlist, and the total length of it, then send it
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        playlists = []
+        if result != None:
+            if result[3] != None and result[3] != "{}":
+                playlists=json.loads(result[3])
+        if playlist not in playlists:
+            await interaction.response.send_message("You do not have a playlist with that name.")
+            return
+        if playlists[playlist] == []:
+            await interaction.response.send_message("You do not have any songs in that playlist.")
+            return
+        response = discord.Embed(title=playlist + ":", color=0x336EFF)
+        total = 0
+        num = 0
+        for song in playlists[playlist]:
+            total += song["length"]
+            num+=1
+            if num <= 25:
+                response.add_field(name=str(num) + ". " + song["title"], value=f"by {song['artist']}\nDuration: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))}", inline=False)
+            response.set_footer(text=f"Total Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}")
+            view = SelectButtonView4(options=["Previous","Next"], interaction=interaction, embed=response)
+        await interaction.response.send_message(embed=response,view=view)
+@list_em.autocomplete('playlist')
+async def list_em_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    settings = [i for i in playlists]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+
+class SelectButtonView4(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: list, interaction: discord.Interaction, embed: discord.Embed):
+        super().__init__(timeout=timeout)
+        for option in options:
+            self.add_item(ButtonClass4(label=option, interaction=interaction, embed=embed))
+
+class ButtonClass4(discord.ui.Button):
+    def __init__(self, label: str, interaction: discord.Interaction, embed: discord.Embed):
+        # Allow access to the original interaction
+        self.original_interaction = interaction
+        self.embed = embed
+        super().__init__(label=label)
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        title = self.embed.title.split(":")[0]
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        playlists = {}
+        if result != None:
+            if result[3] != None and result[3] != "{}":
+                playlists=json.loads(result[3])
+        db.close()
+        if self.label == "Next":
+            last_field = self.embed.fields[-1]
+            num = int(last_field.name.split(".")[0])
+            if num == len(playlists[title]):
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                if num+i < len(playlists[title]):
+                    song = playlists[title][num+i]
+                    self.embed.add_field(name=str(num+i+1) + f".{' **(Current song)**' if num+i+1 == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
+            view = SelectButtonView2(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed)
+        else:
+            first_field = self.embed.fields[0]
+            num = int(first_field.name.split(".")[0])-1
+            if num-25 < 0:
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                if num-25+i >= 0:
+                    song = playlists[title][num-25+i]
+                    self.embed.add_field(name=str(num-24+i) + f".{' **(Current song)**' if num-24+i == 1 else ''}", value=f"Title: {song['title']}\nArtist: {song['artist']}\nLength: {str(datetime.timedelta(milliseconds=(song['length']-(song['length']%1000))))} seconds", inline=False)
+            view = SelectButtonView2(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed)
 
 
 
 
+class SelectButtonView3(discord.ui.View):
+    def __init__(self, *, timeout = 180, options: list, interaction: discord.Interaction, embed: discord.Embed):
+        super().__init__(timeout=timeout)
+        for option in options:
+            self.add_item(ButtonClass3(label=option, interaction=interaction, embed=embed))
+
+class ButtonClass3(discord.ui.Button):
+    def __init__(self, label: str, interaction: discord.Interaction, embed: discord.Embed):
+        # Allow access to the original interaction
+        self.original_interaction = interaction
+        self.embed = embed
+        super().__init__(label=label)
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        db = sqlite3.connect("userdata.db")
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+        result = cursor.fetchone()
+        playlists = []
+        if result != None:
+            if result[3] != None and result[3] != "{}":
+                playlists=json.loads(result[3])
+
+        if self.label == "Next":
+            last_field = self.embed.fields[-1]
+            num = int(last_field.name.split(".")[0])
+            if num == len(list(playlists.keys())):
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                if num+i < len(playlists):
+                    playlist = list(playlists.keys())[num+i]
+                    # get total length of playlist
+                    total = 0
+                    for song in playlists[playlist]:
+                        total += song["length"]
+                    self.embed.add_field(name=str(num+i+1) + ". " + playlist, value=f"{len(playlists[playlist])} song{'s' if len(playlists[playlist]) > 1 else ''}\nTotal Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}", inline=False)
+            view = SelectButtonView3(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed,view=view)
+        else:
+            first_field = self.embed.fields[0]
+            num = int(first_field.name.split(".")[0])
+            if num-25 < 0:
+                return
+            self.embed.clear_fields()
+            for i in range(25):
+                playlist = list(playlists.keys())[num-25+i]
+                if num-25+i >= 0:
+                    total = 0
+                    for song in playlists[playlist]:
+                        total += song["length"]
+                    self.embed.add_field(name=str(num-25+i) + ". " + playlist, value=f"{len(playlists[playlist])} song{'s' if len(playlists[playlist]) > 1 else ''}\nTotal Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}", inline=False)
+            view = SelectButtonView3(options=["Previous", "Next"], interaction=interaction, embed=self.embed)
+            await self.original_interaction.edit_original_response(embed=self.embed,view=view)
+
+
+
+
+
+@playlists.command(name="delete", description='deletes a playlist.')
+async def delete(interaction: discord.Interaction, playlist:str):
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    if playlist not in playlists:
+        await interaction.response.send_message("You do not have a playlist with that name.")
+        return
+    playlists.pop(playlist)
+    cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),interaction.user.id))
+    db.commit()
+    db.close()
+    await interaction.response.send_message(f"Successfully deleted {playlist}.")
+@delete.autocomplete('playlist')
+async def mute_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    settings = [i for i in playlists]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+
+@playlists.command(name="play", description='plays a playlist.')
+async def play(interaction: discord.Interaction, playlist:str):
+    playhere = True if len(bot.queue[interaction.guild.id]) == 0 else False
+    if interaction.user.voice == None:
+        await interaction.response.send_message("You are not in a voice channel.")
+        return
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    db.close()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    if playlist not in playlists:
+        await interaction.response.send_message("You do not have a playlist with that name.")
+        return
+    if playlists[playlist] == []:
+        await interaction.response.send_message("You do not have any songs in that playlist.")
+        return
+    for song in playlists[playlist]:
+        bot.queue[interaction.guild.id].append(song)
+        bot.queueorder[interaction.guild.id].append(song)
+    if playhere:
+        await interaction.response.send_message(f"Now playing {playlist}.")
+        vc = await interaction.user.voice.channel.connect()
+        while len(bot.queue[interaction.guild.id]) > 0:
+            if bot.queue[interaction.guild.id][0]["platform"] == "spotify":
+                db = sqlite3.connect("userdata.db")
+                cursor = db.cursor()
+                cursor.execute("SELECT * FROM users WHERE id = ?", (bot.queue[interaction.guild.id][0]["auth"] if not bot.settings["globalSpotify"] else 0,))
+                spot_result = cursor.fetchone()
+                if spot_result[2] == True:
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (spot_result[1],))
+                    spot_result = cursor.fetchone()
+                db.close()
+                try:
+                    session = lbc.Session.Builder().stored(spot_result[1]).create()
+                except:
+                    continue
+                track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
+                stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
+                audio = stream.input_stream
+                song = await ByteAudioSource.get_stream(stream=audio.stream())
+                songname = bot.queue[interaction.guild.id][0]
+                
+            else:
+                #record what will be played
+                songname = bot.queue[interaction.guild.id][0]
+                #get a stream
+                song = await YTDLSource.from_url(url=bot.queue[interaction.guild.id][0]["url"], loop=bot.loop, stream=True)
+            #play the stream
+            vc.play(song)
+            #wait for the current song to end or get skipped
+            while vc.is_playing() or vc.is_paused():
+                if not songname == bot.queue[interaction.guild.id][0]:
+                    vc.stop()
+                await asyncio.sleep(0.1)
+            #remove the first entry in the queue if not skipped
+            if len(bot.queue[interaction.guild.id]) > 0 and bot.loopmode[interaction.guild.id] in [0,2]:
+                if songname == bot.queue[interaction.guild.id][0]:
+                    if bot.loopmode[interaction.guild.id] == 2:
+                        bot.queue[interaction.guild.id].append(bot.queue[interaction.guild.id][0])
+                        bot.queueorder[interaction.guild.id].append(bot.queueorder[interaction.guild.id][0])
+                    #remove from queue
+                    bot.queue[interaction.guild.id].pop(0)
+                    # if shuffle is enable iterate over ordered list to
+        await vc.disconnect()
+    else:
+        await interaction.response.send_message(f"Added {playlist} to the queue.")
+@play.autocomplete('playlist')
+async def mute_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    db.close()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    settings = [i for i in playlists]
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+#import playlists from spotify
+@playlists.command(name="import", description='imports a spotify playlist.')
+async def import_playlist(interaction: discord.Interaction, playlist:str):
+    await interaction.response.send_message("searching...")
+    name = playlist # i accidentally overwrote playlist and am too lazy to fix it.
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    db.close()
+    if not result[1]:
+        await interaction.edit_original_response(content="You do not have spotify linked.")
+        return
+    try:
+        session = lbc.Session.Builder().stored(result[1]).create()
+    except:
+        await interaction.edit_original_response(content="An error occured, please try again.")
+        return
+    oauth_token = session.tokens().get("playlist-read")
+    sp = spotipy.Spotify(auth=oauth_token)
+    playlists = sp.current_user_playlists()
+    playlists = playlists["items"]
+    playlists = [playlist1 for playlist1 in playlists if playlist1["name"].lower() == playlist.lower()]
+    if playlist == []:
+        await interaction.edit_original_response(content="You do not have a playlist with that name.")
+        return
+    playlist = playlists[0]
+    tracks = sp.playlist_tracks(playlist["id"])
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    playlists = {}
+    if result != None:
+        if result[3] != None and result[3] != "{}":
+            playlists=json.loads(result[3])
+    num = 1
+    while playlist["name"] in playlists:
+        playlist["name"] = playlist["name"][:-len(str(num-1))] + str(num+1)
+        num+=1
+    playlists[playlist["name"]] = []
+    for i in range(len(tracks["items"])):
+        track = tracks["items"][i]["track"]
+        artists = ", ".join([artist["name"] for artist in track["artists"]])
+        playlists[playlist["name"]].append({"url": track["uri"],"title": track["name"],"artist": artists, "platform": "spotify","auth": interaction.user.id, "length": track["duration_ms"]})
+    cursor.execute("UPDATE users SET Playlists = ? WHERE id = ?", (json.dumps(playlists),interaction.user.id))
+    db.commit()
+    db.close()
+    await interaction.edit_original_response(content=f"""Successfully imported {name}{f" as {playlist['name']}" if playlist['name'] != name else ''}.""")
+@import_playlist.autocomplete('playlist')
+async def import_playlist_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    db = sqlite3.connect("userdata.db")
+    cursor = db.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (interaction.user.id,))
+    result = cursor.fetchone()
+    db.close()
+    playlists = {}
+    if result[1] != None:
+        session = lbc.Session.Builder().stored(result[1]).create()
+        oauth_token = session.tokens().get("playlist-read")
+        sp = spotipy.Spotify(auth=oauth_token)
+        playlists = sp.current_user_playlists()
+        playlists = playlists["items"]
+        playlists = [playlist["name"] for playlist in playlists]
+        return [
+            discord.app_commands.Choice(name=playlist, value=playlist)
+            for playlist in playlists if current.lower() in playlist.lower()
+        ]
 bot.tree.add_command(playlists)
 
 
