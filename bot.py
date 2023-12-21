@@ -1163,7 +1163,7 @@ async def list_em(interaction: discord.Interaction, playlist:str = None):
                 total += song["length"]
             num+=1
             if num <= 25:
-                response.add_field(name=str(num) + ". " + playlist, value=f"{len(playlists[playlist])} song{"s" if len(playlists[playlist]) > 1 else ""}\nTotal Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}", inline=False)
+                response.add_field(name=str(num) + ". " + playlist, value=f"""{len(playlists[playlist])} song{"s" if len(playlists[playlist]) > 1 else ""}\nTotal Time: {str(datetime.timedelta(milliseconds=(total-(total%1000))))}""", inline=False)
         view = SelectButtonView3(options=["Previous","Next"], interaction=interaction, embed=response)
         await interaction.response.send_message(embed=response,view=view)
     else:
