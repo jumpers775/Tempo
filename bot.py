@@ -1404,7 +1404,13 @@ async def play(interaction: discord.Interaction, playlist:str):
                 try:
                     session = lbc.Session.Builder().stored(spot_result[1]).create()
                 except:
-                    continue
+                    await asyncio.sleep(1)
+                    try:
+                        session = lbc.Session.Builder().stored(spot_result[1]).create()
+                    except:
+                        await response.edit_original_response(content="Failed to connect to spotify.")
+                        await vc.disconnect()
+                        return
                 track_id = TrackId.from_uri(bot.queue[interaction.guild.id][0]["url"])
                 stream = session.content_feeder().load(track_id, VorbisOnlyAudioQuality(AudioQuality.VERY_HIGH), False, None)
                 audio = stream.input_stream
