@@ -18,7 +18,7 @@ import os
 import datetime
 
 
-version = "1.2.0"
+version = "1.2.1"
 # so that the owner is only notified once
 ownerupdated = False
 updateversion = version
@@ -439,6 +439,8 @@ async def play(interaction: discord.Interaction, song:str, platform:str = None):
     if spot_result != None:
         if spot_result[3] != None and spot_result[3] != "{}":
             spot = True
+    if platform == None:
+        platform = "youtube"
     if platform != None:
         if platform.lower() == "spotify":
             spot = True
