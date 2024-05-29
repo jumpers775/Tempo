@@ -6,9 +6,8 @@
 V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The following is planned:
 
 - [ ] Modularity (using cogs)
-- [ ] Plugins 
-    - Each platform will be a plugin
-          - This means more platforms can be supported easily
+- [X] platform Plugins 
+    - This means more platforms can be supported easily
     - There will be a plugin API for custom plugins
 - [ ] Speech recognition (allows you to skip/add songs/etc using your voice while the bot is playing)
     - Bot will listen for a keyword, then once it hears it will respond to the user 
