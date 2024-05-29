@@ -12,10 +12,10 @@ V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The
     - There will be a plugin API for custom plugins
 - [ ] Speech recognition (allows you to skip/add songs/etc using your voice while the bot is playing)
     - Bot will listen for a keyword, then once it hears it will respond to the user 
-    - I plan on doing this with a combo between whisper and an LLM (llama2-7b-gguf?)
-    - User will be able tro configure which models are in use
+    - I plan on doing this with a combo between whisper and an LLM (release will likely use phi3-mini)
+    - User will be able to configure which models are in use
     - Fully disableable
-    - Must be runnable on a Rasberry pi 4 with 4GB of ram (should be possible)
+    - Must be runnable on a Rasberry pi 5 with 8GB of ram
 - [ ] Native playlist support
       - This must include the ability to access playlists on supported platforms
 - [ ] Update utility within the bot (will require owner to press a button)
