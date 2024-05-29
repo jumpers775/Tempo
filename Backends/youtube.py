@@ -6,23 +6,25 @@ import discord
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import libTempo
-import yt_dlp
+import yt_dlp as youtube_dl
 
-async def search(query, user_id):
+async def search(query:str, user: discord.User, count:int=5):
     ydl_opts = {
         'default_search': 'ytsearch',  # Use YouTube search
         'ignoreerrors': True,  # Ignore any errors during extraction
         'quiet': True  # Suppress console output
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
         search_results = ydl.extract_info(f"ytsearch5:{query}", download=False)
     results = []
     # Process the search results
-    for result in search_results['entries'][:5]:
+    for result in search_results['entries'][:count]:
         video_title = result['title']
         video_url = result['webpage_url']
-        results.append(libTempo.Result(user_id, video_title, "youtube", result['duration'], video_url))
+        length = result['duration']
+        author = result["channel"]
+        results.append(libTempo.Song(user, video_title, author, "youtube", length, video_url))
     return results
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -60,5 +62,5 @@ class YTDLSource(discord.PCMVolumeTransformer):
         return cls(discord.FFmpegPCMAudio(filename, **ffmpeg_options), data=data)
 
 
-async def getstream(url):
+async def getstream(url, ):
     return await YTDLSource.from_url(url, loop=asyncio.get_event_loop(), stream=True)
