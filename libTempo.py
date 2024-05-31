@@ -38,7 +38,7 @@ def import_backends():
 
         try:
             module = importlib.import_module(module_name)
-            backendtype = verify_backend(module)
+            backendtype = _verify_backend(module)
             if backendtype != 0:
                 backends[module_name] = module
                 backends[module_name].type = backendtype
@@ -50,7 +50,7 @@ def import_backends():
 
     return backends
 
-def verify_backend(backend):
+def _verify_backend(backend):
     """
     Verifies that a backend has all the required functions. Also returns the backend type.
     Backend types:
