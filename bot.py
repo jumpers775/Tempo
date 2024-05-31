@@ -35,16 +35,16 @@ intents.message_content = True
 intents.members = True
 
 
-# settings placeholder
-settings = {
-    "updateDM": True
-}
 
 
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
-bot.settings = settings
+bot.settings = {
+    "updateDM": True,
+    "Voice": {}
+}
+
 
 #update checks
 ownerupdated = False
@@ -73,7 +73,8 @@ async def on_ready():
     print(f"{bot.user} is online.")
     bot.players = {}
     for guild in bot.guilds:
-        bot.players[guild.id] = libTempo.MusicPlayer(backends)
+        bot.settings["Voice"][guild.id] = True
+        bot.players[guild.id] = libTempo.MusicPlayer(backends, bot.settings["Voice"][guild.id])
 
 @bot.command()
 @commands.is_owner()
@@ -260,6 +261,12 @@ async def shuffle_autocomplete(
         discord.app_commands.Choice(name=status, value=status)
         for status in statuses if current.lower() in status.lower()
     ]
+
+
+
+
+
+
 
 
 

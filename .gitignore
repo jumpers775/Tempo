@@ -1,3 +1,6 @@
+#sound
+*.wav
+
 # Database
 *.db
 *.json

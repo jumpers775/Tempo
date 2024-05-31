@@ -22,8 +22,9 @@ V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The
 - [ ] Nicer UX
 
 ## dependencies
+Use python3.11 for now as not all of the dependenccies support 3.12+
 to install the dependencies run:
-`pip install pynacl discord asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp`
+`pip install pynacl git+https://github.com/Rapptz/discord.py.git asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp matcha-tts pydub numpy discord-ext-voice-recv SpeechRecognition `
 Also install [sqlite3](https://www.sqlite.org/index.html) and [ffmpeg](https://ffmpeg.org/)
 
 ## Running the bot
