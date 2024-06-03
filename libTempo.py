@@ -387,7 +387,7 @@ class WhisperSink(voice_recv.AudioSink):
         audio_buffer.seek(0)
         segments, info = self.whisper.transcribe(audio_buffer, beam_size=5)
         text = "".join([segment.text for segment in segments])
-        if True in [i in text.lower() for i in self.triggerwords]:
+        if True in [i in text.lower() for i in self.triggerwords] or self._lock != None:
             if text.startswith(self.triggerwords[0]):
                 text = text[len(self.triggerwords[0])+1:] # get rid of tempo wake word as it isnt a command
             self.latest_text = str(user_id) + ":" + text
