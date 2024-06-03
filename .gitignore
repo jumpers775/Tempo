@@ -1,6 +1,9 @@
-#sound
+# sound
 *.wav
 
+# configuration
+*.cfg
+ 
 # Database
 *.db
 *.json
