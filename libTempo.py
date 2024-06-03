@@ -4,23 +4,18 @@ import sys
 import asyncio
 import sqlite3
 import discord
-import time
-import threading
 import random
 import numpy as np
 from tts import generate
 from discord.ext import voice_recv
-import torch
-import torchaudio
-from pydub import AudioSegment
 import math
 from faster_whisper import WhisperModel
-import struct
 import io
-from typing import BinaryIO, Union, Optional, List, Tuple, Iterable
 import wave
 import array
 from collections import defaultdict
+from llama_cpp import Llama
+import json
 
 
 def import_backends():
@@ -146,7 +141,9 @@ class MusicPlayer:
 
         self.mixer = Mixer()
 
-        self._voice = voice            
+        self._voice = voice
+        self._textassistant = TextAssistant() if self._voice else None  
+        self._sink = WhisperSink()
         self._skip = False
         self._paused = False 
         self._stop = False
@@ -160,20 +157,13 @@ class MusicPlayer:
             raise RuntimeError("MusicPlayer must be bound to a vc to listen.")
     async def _listen(self):
         if self._voice:
-            sink = WhisperSink()
-            self.vc.listen(sink)
+            self.vc.listen(self._sink)
     async def _play(self):
         self.active = True
         while len(self.playlist) > 0:
             song = self.playlist.GetCurrentEntry()
             stream = await self.backends[song.backend].getstream(song.url, song.user.id)
-
-            speech = generate(f"now playing {song.title} by {song.author}")
-            
-            source2 = discord.FFmpegPCMAudio(speech, pipe=True)
-
             self.mixer.set_source1(stream)
-            self.mixer.set_source2(source2)
             self.vc.play(self.mixer)
             while self.vc.is_playing() or self.mixer.is_paused():
                 if self._stop:
@@ -188,6 +178,13 @@ class MusicPlayer:
                 else:
                     if self.mixer.is_paused():
                         self.mixer.resume()
+                if self._voice:
+                    text = self._sink.getupdate()
+                    if text is not None:
+                        output = self._textassistant.run(text)
+                        speech = generate(output) 
+                        source2 = discord.FFmpegPCMAudio(speech, pipe=True)
+                        self.mixer.set_source2(source2)
                 await asyncio.sleep(0.1)
             self.playlist.next()
         await self.leave_channel()
@@ -226,7 +223,7 @@ class MusicPlayer:
         return [[entry.title, entry.author, entry.length] for entry in entries]
     def skip(self):
         self._skip = True
-
+        
 
 
 class Mixer(discord.AudioSource):
@@ -319,15 +316,15 @@ class BytesAudioSource(discord.AudioSource):
 
 
 class WhisperSink(voice_recv.AudioSink):
-    def __init__(self):
+    def __init__(self,triggerwords=None):
         super().__init__()
         self.user_packets = defaultdict(lambda: array.array("B"))
         model = "base" # hardcoded, should be configurable
         self.whisper = WhisperModel(model, device="auto", compute_type="int8")
-
+        self.latest_text = None
+        self.triggerwords = triggerwords or ["tempo","play","stop","pause"]
     def wants_opus(self) -> bool:
         return False
-
     def write(self, user: discord.User | discord.Member | None, data: voice_recv.VoiceData):
         if isinstance(data.packet, voice_recv.rtp.SilencePacket):
             return
@@ -343,29 +340,25 @@ class WhisperSink(voice_recv.AudioSink):
         if math.floor(speaking_length) == 5:
             self._transcribe(user_id)
             self.user_packets[user_id] = array.array("B")
-
     def _transcribe(self, user_id):
         pcm_data = self.user_packets[user_id]
         audio_data = np.array(pcm_data, dtype="B")
-
-        # Save audio data in an in-memory buffer
         audio_buffer = io.BytesIO()
         with wave.open(audio_buffer, "wb") as wav_file:
             wav_file.setnchannels(2)  # Stereo
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(48000)  # 48 kHz
             wav_file.writeframes(audio_data.tobytes())
-
-        # Reset the buffer position to the beginning
         audio_buffer.seek(0)
-
-        # Transcribe audio from the in-memory buffer
         segments, info = self.whisper.transcribe(audio_buffer, beam_size=5)
-        
-        # Print or return the transcription results
-        print(f"Transcribed: " + "".join([segment.text for segment in segments]))
-
-
+        text = "".join([segment.text for segment in segments])
+        if True in [i in text.lower() for i in self.triggerwords]:
+            self.latest_text = text
+    def getupdate(self):
+        if self.latest_text != None:
+            text = self.latest_text
+            self.latest_text = None
+            return text
     def cleanup(self):
         return
 
@@ -377,3 +370,21 @@ class WhisperSink(voice_recv.AudioSink):
     def on_voice_member_speaking_stop(self, member: discord.Member):
         self._transcribe(member.id)
         self.user_packets[member.id] = array.array("B")
+
+
+
+class TextAssistant:
+    def __init__(self, model=None, quant=None,chat_format=None):
+        self.model = model or "nold/Phi-3-mini-4k-instruct-function-calling-GGUF"
+        self.quant = quant or "Q4_K_M"
+        self.chat_format = chat_format or "chatml-function-calling"
+        self.llm = Llama.from_pretrained(
+            repo_id=self.model,
+            filename=f"*{self.quant}.gguf",
+            chat_format=self.chat_format,
+            n_ctx=4096,
+            n_gpu_layers=-1,
+            verbose=False
+        )
+    def run(self,text):
+        return "Voice is currently under development."

@@ -57,7 +57,7 @@ denoiser = Denoiser(vocoder, mode='zeros')
 
 @torch.inference_mode()
 def process_text(text: str):
-    x = torch.tensor(intersperse(text_to_sequence(text, ['english_cleaners2'])[0], 0),dtype=torch.long, device=device)[None]
+    x = torch.tensor(intersperse(text_to_sequence(text, ['english_cleaners2']), 0),dtype=torch.long, device=device)[None]
     x_lengths = torch.tensor([x.shape[-1]],dtype=torch.long, device=device)
     x_phones = sequence_to_text(x.squeeze(0).tolist())
     return {
@@ -115,7 +115,6 @@ def generate(text):
 
 
         sf.write(audio_bytesio, output['waveform'], 22050, 'PCM_24', format='WAV')
-        sf.write("heheha.wav", output['waveform'], 22050, 'PCM_24', format='WAV')
 
 
         audio_data = audio_bytesio.getvalue()

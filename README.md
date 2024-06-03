@@ -6,8 +6,9 @@
 V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The following is planned:
 
 - [ ] Modularity (using cogs)
-- [X] platform Plugins 
-    - This means more platforms can be supported easily
+- [ ] Plugins 
+    - Each platform will be a plugin
+          - This means more platforms can be supported easily
     - There will be a plugin API for custom plugins
 - [ ] Speech recognition (allows you to skip/add songs/etc using your voice while the bot is playing)
     - Bot will listen for a keyword, then once it hears it will respond to the user 
@@ -23,7 +24,8 @@ V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The
 ## dependencies
 Use python3.11 for now as not all of the dependenccies support 3.12+
 to install the dependencies run:
-`pip install pynacl git+https://github.com/Rapptz/discord.py.git asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp matcha-tts pydub numpy discord-ext-voice-recv SpeechRecognition `
+`pip install pynacl git+https://github.com/Rapptz/discord.py.git asyncio youtube_search yt-dlp python-dotenv git+https://github.com/kokarare1212/librespot-python spotipy aiohttp matcha-tts numpy discord-ext-voice-recv`
+additionally install `llama-cpp-python` with whatever speedups you want (openblas, cuda, rocm, vulkan, etc)
 Also install [sqlite3](https://www.sqlite.org/index.html) and [ffmpeg](https://ffmpeg.org/)
 
 ## Running the bot
@@ -53,3 +55,8 @@ This bot features the following:
 - [ ] Spotify playlists
 - [ ] YT playlists
 - [ ] inbuilt playlists
+
+
+known issues:
+ - doesnt always pick up wake word
+ - freeze on youtube search
