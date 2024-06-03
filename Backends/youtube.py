@@ -24,7 +24,7 @@ async def search(query:str, user: discord.User, count:int=5):
         video_url = result['webpage_url']
         length = result['duration']
         author = result["channel"]
-        results.append(libTempo.Song(user, video_title, author, "youtube", length, video_url))
+        results.append(libTempo.Song(None or user, video_title, author, "youtube", length, video_url))
     return results
 
 class YTDLSource(discord.PCMVolumeTransformer):

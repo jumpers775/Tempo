@@ -144,6 +144,9 @@ class MusicPlayer:
         self._voice = voice
         self._textassistant = TextAssistant() if self._voice else None  
         self._sink = WhisperSink()
+        self._commands = ["play", "resume", "pause", "stop"]
+        self._is_listening = False
+        self._results = []
         self._skip = False
         self._paused = False 
         self._stop = False
@@ -181,10 +184,38 @@ class MusicPlayer:
                 if self._voice:
                     text = self._sink.getupdate()
                     if text is not None:
-                        output = self._textassistant.run(text)
-                        speech = generate(output) 
-                        source2 = discord.FFmpegPCMAudio(speech, pipe=True)
-                        self.mixer.set_source2(source2)
+                        text = text.split(":")
+                        id = text[0]
+                        text = "".join(text[1:])
+                        command, output = self._textassistant.run(text)
+                        if command == None and output == None:
+                            speech = generate("Sorry, I didnt quite get that,") 
+                            source2 = discord.FFmpegPCMAudio(speech, pipe=True)
+                            self.mixer.set_source2(source2)
+                        if command == "play" and output != None:
+                            if not self._is_listening:
+                                self._results = self.backends["youtube"].search(output) # placeholder, look up users prefered backend + add User object
+                                self._sink.lock(id)
+                                speech = generate("which would you like to play. " + " ".join([f"{num}. {self._results[i].title} by {self._results[i].author}" for i in range(len(self._results))])) 
+                                source2 = discord.FFmpegPCMAudio(speech, pipe=True)
+                                self.mixer.set_source2(source2)
+                                self._is_listening = True
+                        else:
+                            num = self._commands.index(command)
+                            if num == 0 or num == 1:
+                                self.resume()
+                            if num == 2:
+                                self.pause()
+                            if num == 3:
+                                self.stop()
+                    if self._is_listening == True:
+                        update = self._sink.getupdate()
+                        if update != None:
+                            key = [i in update for i in ["one","two","three","four","five"]]
+                            if True in key:
+                                num = key.index(True)
+                                self.add_song(self._results[num])
+                                self._is_listening = False
                 await asyncio.sleep(0.1)
             self.playlist.next()
         await self.leave_channel()
@@ -323,6 +354,7 @@ class WhisperSink(voice_recv.AudioSink):
         self.whisper = WhisperModel(model, device="auto", compute_type="int8")
         self.latest_text = None
         self.triggerwords = triggerwords or ["tempo","play","stop","pause"]
+        self._lock = None
     def wants_opus(self) -> bool:
         return False
     def write(self, user: discord.User | discord.Member | None, data: voice_recv.VoiceData):
@@ -332,6 +364,7 @@ class WhisperSink(voice_recv.AudioSink):
         if user is None:
             return
         
+
         user_id = user.id
         self.user_packets[user_id].extend(data.pcm)
 
@@ -341,6 +374,8 @@ class WhisperSink(voice_recv.AudioSink):
             self._transcribe(user_id)
             self.user_packets[user_id] = array.array("B")
     def _transcribe(self, user_id):
+        if self._lock != None and self._lock != user_id:
+            return
         pcm_data = self.user_packets[user_id]
         audio_data = np.array(pcm_data, dtype="B")
         audio_buffer = io.BytesIO()
@@ -353,12 +388,18 @@ class WhisperSink(voice_recv.AudioSink):
         segments, info = self.whisper.transcribe(audio_buffer, beam_size=5)
         text = "".join([segment.text for segment in segments])
         if True in [i in text.lower() for i in self.triggerwords]:
-            self.latest_text = text
+            if text.startswith(self.triggerwords[0]):
+                text = text[len(self.triggerwords[0])+1:] # get rid of tempo wake word as it isnt a command
+            self.latest_text = str(user_id) + ":" + text
     def getupdate(self):
         if self.latest_text != None:
             text = self.latest_text
             self.latest_text = None
             return text
+    def lock(self, id):
+        self._lock = id
+    def unlock(self):
+        self._lock = None
     def cleanup(self):
         return
 
@@ -374,17 +415,28 @@ class WhisperSink(voice_recv.AudioSink):
 
 
 class TextAssistant:
-    def __init__(self, model=None, quant=None,chat_format=None):
-        self.model = model or "nold/Phi-3-mini-4k-instruct-function-calling-GGUF"
-        self.quant = quant or "Q4_K_M"
-        self.chat_format = chat_format or "chatml-function-calling"
-        self.llm = Llama.from_pretrained(
-            repo_id=self.model,
-            filename=f"*{self.quant}.gguf",
-            chat_format=self.chat_format,
-            n_ctx=4096,
-            n_gpu_layers=-1,
-            verbose=False
-        )
+    def __init__(self):
+        pass
+    def _classify_and_extract_song(self, text):
+        # Define the possible commands and their corresponding keywords
+        commands = {"play": ["play", "play song"],
+                    "stop": ["stop"],
+                    "pause": ["pause"],
+                    "resume": ["resume"]}
+
+        # Initialize song name as None
+        song_name = None
+
+        # Classify the input text
+        for command, keywords in commands.items():
+            if any(keyword in text.lower() for keyword in keywords):
+                if command == "play":
+                    # Split the text to separate the song name from the "play" command
+                    words = text.split()
+                    if len(words) > 1:
+                        song_name = ' '.join(words[1:])
+                return command, song_name
+
+        return None, None
     def run(self,text):
-        return "Voice is currently under development."
+        return self._classify_and_extract_song(text)
