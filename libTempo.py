@@ -14,26 +14,23 @@ import io
 import wave
 import array
 from collections import defaultdict
-from llama_cpp import Llama
 import json
 
 
-def import_backends():
+def import_backends(backends_folder: str):
     """Imports all valid backends from the Backends folder and returns a dictionary of them."""
-    backends_folder = "Backends"
     backends = {}
 
     sys.path.append(backends_folder)
 
-    backend_files = [file for file in os.listdir(backends_folder) if file.endswith(".py")]
-
+    backend_files = [file for file in os.listdir(backends_folder) if file.endswith(".py") and file != "verify.py"]
+    verify = importlib.import_module("verify", "Backends/Music/verify.py")
     for file in backend_files:
         module_name = os.path.splitext(file)[0]  
         module_path = os.path.join(backends_folder, file) 
-
         try:
             module = importlib.import_module(module_name)
-            backendtype = _verify_backend(module)
+            backendtype = verify.verify(module)
             if backendtype != 0:
                 backends[module_name] = module
                 backends[module_name].type = backendtype
@@ -45,30 +42,6 @@ def import_backends():
 
     return backends
 
-def _verify_backend(backend):
-    """
-    Verifies that a backend has all the required functions. Also returns the backend type.
-    Backend types:
-    0 - Invalid, missing required functions
-    1 - Valid
-    2 - Valid, Platform Playlists supported
-    """
-    # Presume maximum support
-    backendtype = 2
-
-    required_functions = ["search","getstream"]
-    playlist_functions = ["getplaylist"]
-
-    for function_name in required_functions:
-        if not hasattr(backend, function_name):
-            # If the backend doesnt have the required functions we can exit early as it's invalid
-            return 0
-    
-    # If the backend doesn't support playlists, set the backend type to 1
-    for function_name in playlist_functions:
-        if not hasattr(backend, function_name):
-            backendtype = 1
-    return backendtype
 
 # get userdata from database
 def get_userdata(user_id):

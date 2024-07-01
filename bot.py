@@ -25,7 +25,7 @@ with sqlite3.connect("tempo.db") as db:
     
 
 
-backends = libTempo.import_backends()
+backends = libTempo.import_backends("Backends/Music")
 
 
 
