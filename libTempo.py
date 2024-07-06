@@ -16,6 +16,34 @@ import array
 from collections import defaultdict
 import json
 
+def load_settings(bot, version):
+    # create the database if it doesnt already exist
+    with sqlite3.connect("tempo.db") as db:
+        cursor = db.cursor()
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, data TEXT)")
+        cursor.execute("CREATE TABLE IF NOT EXISTS DBInfo (version TEXT)")
+        # set version if databse was just created (first run)
+        cursor.execute("SELECT * FROM DBInfo")
+        if cursor.fetchone() is None:
+            cursor.execute("INSERT INTO DBInfo(version) VALUES (?)", (version,))
+        else:
+            pass # handle version updates here
+        db.commit()
+        default = {
+            "UpdateDM": True,
+            "Default": "youtube",
+            "Key": None
+        }
+        cursor.execute("INSERT OR IGNORE INTO users (id, data) VALUES (?, ?)", (0, json.dumps(default)))
+        rows = cursor.execute("SELECT * FROM users WHERE id=?", (0,)).fetchall()
+        return json.loads(rows[0][1])
+
+
+
+
+
+
+
 
 def import_backends(backends_folder: str):
     """Imports all valid backends from the Backends folder and returns a dictionary of them."""
@@ -50,6 +78,7 @@ def get_userdata(user_id):
         cursor.execute("SELECT * FROM userdata WHERE users = ?", (user_id,))
         userdata = cursor.fetchone()
         return userdata
+    
 
 
 class Song:

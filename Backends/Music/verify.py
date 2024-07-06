@@ -12,7 +12,7 @@ def verify(backend):
 
     fns = dir(backend)
 
-    required_functions = ["search","getstream"]
+    required_functions = ["search","getstream", "auth"]
     playlist_functions = ["getplaylist"]
 
     if False not in [i in fns for i in required_functions]:

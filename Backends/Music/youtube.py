@@ -64,3 +64,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
 
 async def getstream(url: str, user: discord.User = None):
     return await YTDLSource.from_url(url, loop=asyncio.get_event_loop(), stream=True)
+
+
+def auth():
+    return True

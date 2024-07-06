@@ -12,16 +12,6 @@ import aiohttp
 version = "2.0.0"
 
 
-# create the database if it doesnt already exist
-with sqlite3.connect("tempo.db") as db:
-    cursor = db.cursor()
-    cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, data TEXT)")
-    cursor.execute("CREATE TABLE IF NOT EXISTS DBInfo (version TEXT)")
-    # set version if databse was just created (first run)
-    cursor.execute("SELECT * FROM DBInfo")
-    if cursor.fetchone() is None:
-        cursor.execute("INSERT INTO DBInfo(version) VALUES (?)", (version,))
-    db.commit()
     
 
 
@@ -40,6 +30,9 @@ intents.members = True
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
+
+libTempo.load_settings(bot, version)
+
 bot.settings = {
     "updateDM": True,
     "Voice": {}
