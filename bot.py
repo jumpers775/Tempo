@@ -31,12 +31,7 @@ intents.members = True
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
 
-libTempo.load_settings(bot, version)
-
-bot.settings = {
-    "updateDM": True,
-    "Voice": {}
-}
+bot.settings = libTempo.load_settings(bot, version)
 
 
 #update checks
@@ -56,9 +51,6 @@ async def updatecheck():
                     app_info = await bot.application_info()
                     user = bot.get_user(app_info.owner.id)
                     await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
-
-
-
 
 @bot.event
 async def on_ready():
@@ -110,7 +102,8 @@ async def play(interaction: discord.Interaction, song:str, platform:str = None):
         await interaction.response.send_message("I do not have permission to play music in that voice channel.")
         return
     await interaction.response.send_message("Searching...")
-    result = await backends["youtube"].search(song, interaction.user)
+    userbackend = libTempo.getuserbackend(interaction.user.id)
+    result = await backends[userbackend[0]].search(song, interaction.user, key=userbackend[1])
     options = []
     for i in range(len(result)):
         options.append(discord.SelectOption(label=f'{i+1}) '+ result[i].title, description=f'By {result[i].author}', emoji='🎧'))

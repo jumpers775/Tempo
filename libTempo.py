@@ -39,6 +39,27 @@ def load_settings(bot, version):
         return json.loads(rows[0][1])
 
 
+def getuserbackend(id):
+        userdata = getuserdata(id)
+        platform = userdata["platform"]
+        key = userdata["keys"][userdata["platform"]]
+        return platform, key
+
+
+
+def getuserdata(id):
+    with sqlite3.connect("tempo.db") as db:
+        cursor = db.cursor()
+        rows = cursor.execute("SELECT * FROM users WHERE id=?", (0,)).fetchall()
+        if rows:
+            return json.loads(rows[0][1])
+        else:
+            default = {
+                "platform": "youtube",
+                "keys": {"youtube": None}
+            }
+            cursor.execute("INSERT INTO users (id, data) VALUES (?, ?)", (id, json.dumps(default)))
+            return default
 
 
 
@@ -183,7 +204,7 @@ class MusicPlayer:
                 else:
                     if self.mixer.is_paused():
                         self.mixer.resume()
-                if self._voice:
+                if self._voice and False: # disable this for now
                     text = self._sink.getupdate()
                     if text is not None:
                         text = text.split(":")

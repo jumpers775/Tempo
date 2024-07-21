@@ -8,7 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import libTempo
 import yt_dlp as youtube_dl
 
-async def search(query:str, user: discord.User, count:int=5):
+async def search(query:str, user: discord.User, count:int=5, key = None):
     ydl_opts = {
         'default_search': 'ytsearch',  # Use YouTube search
         'ignoreerrors': True,  # Ignore any errors during extraction
