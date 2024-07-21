@@ -32,7 +32,8 @@ def load_settings(bot, version):
         default = {
             "UpdateDM": True,
             "Default": "youtube",
-            "Key": None
+            "Key": None,
+            "Voice": False
         }
         cursor.execute("INSERT OR IGNORE INTO users (id, data) VALUES (?, ?)", (0, json.dumps(default)))
         rows = cursor.execute("SELECT * FROM users WHERE id=?", (0,)).fetchall()
@@ -50,7 +51,7 @@ def getuserbackend(id):
 def getuserdata(id):
     with sqlite3.connect("tempo.db") as db:
         cursor = db.cursor()
-        rows = cursor.execute("SELECT * FROM users WHERE id=?", (0,)).fetchall()
+        rows = cursor.execute("SELECT * FROM users WHERE id=?", (id,)).fetchall()
         if rows:
             return json.loads(rows[0][1])
         else:
@@ -61,9 +62,31 @@ def getuserdata(id):
             cursor.execute("INSERT INTO users (id, data) VALUES (?, ?)", (id, json.dumps(default)))
             return default
 
+def saveuserdata(id, data):
+    with sqlite3.connect("tempo.db") as db:
+        cursor = db.cursor()
+        cursor.execute("UPDATE users SET data=? WHERE id=?", (json.dumps(data), id))
+        db.commit()
 
+def setuserplatform(id, platform):
+    userdata = getuserdata(id)
+    if platform not in userdata["keys"]:
+        return False
+    userdata["platform"] = platform
+    saveuserdata(id, userdata)
+    return True
 
+def setuserkey(id, platform, key):
+    userdata = getuserdata(id)
+    userdata["keys"][platform] = key
+    saveuserdata(id, userdata)
 
+def rmuserkey(id, platform):
+    userdata = getuserdata(id)
+    userdata["keys"][platform] = None
+    if platform == userdata["platform"]:
+        userdata["platform"] = "youtube"
+    saveuserdata(id, userdata)
 
 
 def import_backends(backends_folder: str):
@@ -314,6 +337,7 @@ class Mixer(discord.AudioSource):
         combined_audio_bytes = combined_audio.astype(np.int16).tobytes()
         
         return combined_audio_bytes
+
 
     def read(self):
         if self.source1 is not None and self._paused == False:

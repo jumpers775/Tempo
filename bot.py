@@ -15,7 +15,6 @@ version = "2.0.0"
     
 
 
-backends = libTempo.import_backends("Backends/Music")
 
 
 
@@ -30,8 +29,8 @@ intents.members = True
 
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
-
 bot.settings = libTempo.load_settings(bot, version)
+bot.backends = libTempo.import_backends("Backends/Music")
 
 
 #update checks
@@ -58,8 +57,7 @@ async def on_ready():
     print(f"{bot.user} is online.")
     bot.players = {}
     for guild in bot.guilds:
-        bot.settings["Voice"][guild.id] = True
-        bot.players[guild.id] = libTempo.MusicPlayer(backends, bot.settings["Voice"][guild.id])
+        bot.players[guild.id] = libTempo.MusicPlayer(bot.backends, bot.settings["Voice"])
 
 @bot.command()
 @commands.is_owner()
@@ -103,7 +101,7 @@ async def play(interaction: discord.Interaction, song:str, platform:str = None):
         return
     await interaction.response.send_message("Searching...")
     userbackend = libTempo.getuserbackend(interaction.user.id)
-    result = await backends[userbackend[0]].search(song, interaction.user, key=userbackend[1])
+    result = await bot.backends[userbackend[0]].search(song, interaction.user, key=userbackend[1])
     options = []
     for i in range(len(result)):
         options.append(discord.SelectOption(label=f'{i+1}) '+ result[i].title, description=f'By {result[i].author}', emoji='🎧'))
@@ -249,11 +247,70 @@ async def shuffle_autocomplete(
     ]
 
 
+@discord.app_commands.command(name='auth', description='Authorizes user for a platform')
+async def auth(interaction: discord.Interaction, platform:str, username: str, key:str):
+    if platform not in bot.backends:
+        await interaction.response.send_message("Invalid platform.", ephemeral=True)
+        return
+    key = bot.backends[platform].auth(username, key)
+    if key == None:
+        await interaction.response.send_message("Invalid credentials.", ephemeral=True)
+        return
+    libTempo.setuserkey(interaction.user.id, platform, key)
+    await interaction.response.send_message(f"Authorized {platform} account.", ephemeral=True)
+@auth.autocomplete('platform')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    platforms = list(bot.backends.keys())
+    return [
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
+    ]
+bot.tree.add_command(auth)
 
 
+@discord.app_commands.command(name='deauth', description='Deauthorizes user for a platform')
+async def deauth(interaction: discord.Interaction, platform:str):
+    if platform not in bot.backends:
+        await interaction.response.send_message("Invalid platform.")
+        return
+    libTempo.rmuserkey(interaction.user.id, platform)
+    await interaction.response.send_message(f"Deauthorized {platform} account.", ephemeral=True)
+@deauth.autocomplete('platform')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    platforms = list(bot.backends.keys())
+    return [
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
+    ]
+bot.tree.add_command(deauth)
 
-
-
+@discord.app_commands.command(name='setplatform', description='sets a users preferred platform')
+async def setplatform(interaction: discord.Interaction, platform:str):
+    if platform not in bot.backends:
+        await interaction.response.send_message("Invalid platform.")
+        return
+    set = libTempo.setuserplatform(interaction.user.id, platform)
+    if set:
+        await interaction.response.send_message(f"Set preferred platform to {platform}.")
+    else:
+        await interaction.response.send_message(f"You do not have access to {platform}.", ephemeral=True)
+@setplatform.autocomplete('platform')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    platforms = list(bot.backends.keys())
+    return [
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
+    ]
+bot.tree.add_command(setplatform)
 
 
 dotenv.load_dotenv()

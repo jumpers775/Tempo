@@ -14,8 +14,12 @@ dependencies:
 - ipython=8.26.0
 - pysoundfile=0.12.1
 - pytorch=2.3.1
+- pillow=10.4.0
+- spotipy=2.23.0
 - pip=24.0
 - pip:
   - "--editable=git+https://github.com/imayhaveborkedit/discord-ext-voice-recv#egg=discord-ext-voice-recv"
+  - "git+https://github.com/kokarare1212/librespot-python"
   - "faster-whisper"
   - "wave"
+  - "matcha-tts"
