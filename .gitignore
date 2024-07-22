@@ -1,3 +1,9 @@
+# sound
+*.wav
+
+# configuration
+*.cfg
+ 
 # Database
 *.db
 *.json
@@ -19,6 +25,11 @@ eggs/
 .eggs/
 lib/
 lib64/
+lib64
+include/
+share/
+ccreate/
+bin/
 parts/
 sdist/
 var/
