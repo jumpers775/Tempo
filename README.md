@@ -36,7 +36,7 @@ The bot will notify you if there is an update available. It is recommended that 
 
 ## Features
 
-This bot features the following:
+While additional platforms can be easily added, this bot features the following OOTB:
 
 - [X] Slash commands
 - [X] Youtube search
@@ -50,11 +50,12 @@ This bot features the following:
 - [X] Update notifications
 - [X] Pause support
 - [X] Loop support
+- [X] Inbuilt playlists
 - [ ] Spotify playlists
 - [ ] YT playlists
-- [ ] inbuilt playlists
+- [ ] Voice commands
+- [ ] account sharing for paid platforms
 
 
 known issues:
- - doesnt always pick up wake word
- - freeze on youtube search
+ - freeze on search
