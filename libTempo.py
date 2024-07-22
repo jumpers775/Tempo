@@ -92,6 +92,11 @@ def rmuserkey(id, platform):
         userdata["platform"] = "youtube"
     saveuserdata(id, userdata)
 
+def getuserkey(id, platform):
+    userdata = getuserdata(id)
+    return userdata["keys"][platform]
+
+
 
 def import_backends(backends_folder: str):
     """Imports all valid backends from the Backends folder and returns a dictionary of them."""

@@ -92,14 +92,33 @@ async def play(interaction: discord.Interaction, song:str, platform:str = None):
     if not permissions.connect or not permissions.speak:
         await interaction.response.send_message("I do not have permission to play music in that voice channel.")
         return
+    userbackends = libTempo.getuserdata(interaction.user.id)
+    if platform != None and platform not in userbackends["keys"] and platform != "default":
+        await interaction.response.send_message("You are not authorized to use that platform.")
+        return
     await interaction.response.send_message("Searching...")
-    userbackend = libTempo.getuserbackend(interaction.user.id)
+    if platform == None or platform == "default":
+        userbackend = libTempo.getuserbackend(interaction.user.id)
+    else:
+        userbackend = [platform, libTempo.getuserkey(interaction.user.id, platform)]
     result = await bot.backends[userbackend[0]].search(song, interaction.user, key=userbackend[1])
     options = []
     for i in range(len(result)):
         options.append(discord.SelectOption(label=f'{i+1}) '+ result[i].title, description=f'By {result[i].author}', emoji='🎧'))
     view = PlaySelectListView(options=options, interaction=interaction,results=result)
     await interaction.edit_original_response(content="Choose a song", view=view)
+@play.autocomplete('platform')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    platforms = list(bot.backends.keys())
+    platforms.insert(0, "default")
+    return [
+        discord.app_commands.Choice(name=platform, value=platform)
+        for platform in platforms if current.lower() in platform.lower()
+    ]
+
 
 #view class to select the correct song.
 class PlaySelectListView(discord.ui.View):

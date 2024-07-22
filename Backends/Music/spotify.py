@@ -20,7 +20,7 @@ async def search(query:str, user: discord.User, count:int=5, key = None):
     for result in results[:count]:
         video_title = result['name']
         video_url = result['uri']
-        length = result['duration_ms']
+        length = int(result['duration_ms']/1000)
         author = ", ".join([result["artists"][i]["name"] for i in range(len(result["artists"]))])
         songs.append(libTempo.Song(None or user, video_title, author, "spotify", length, video_url))
 
