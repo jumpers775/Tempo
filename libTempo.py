@@ -16,7 +16,7 @@ import array
 from collections import defaultdict
 import json
 
-def load_settings(bot, version):
+def load_settings(version):
     # create the database if it doesnt already exist
     with sqlite3.connect("tempo.db") as db:
         cursor = db.cursor()
@@ -44,6 +44,10 @@ def getuserbackend(id):
         userdata = getuserdata(id)
         platform = userdata["platform"]
         key = userdata["keys"][userdata["platform"]]
+        if platform == "default":
+            settings = load_settings(None)
+            platform = settings["Default"]
+            key = settings["Key"]
         return platform, key
 
 
@@ -56,7 +60,7 @@ def getuserdata(id):
             return json.loads(rows[0][1])
         else:
             default = {
-                "platform": "youtube",
+                "platform": "default",
                 "keys": {"youtube": None}
             }
             cursor.execute("INSERT INTO users (id, data) VALUES (?, ?)", (id, json.dumps(default)))
@@ -70,7 +74,7 @@ def saveuserdata(id, data):
 
 def setuserplatform(id, platform):
     userdata = getuserdata(id)
-    if platform not in userdata["keys"]:
+    if platform not in userdata["keys"] and platform != "default":
         return False
     userdata["platform"] = platform
     saveuserdata(id, userdata)
@@ -112,17 +116,7 @@ def import_backends(backends_folder: str):
         except ImportError as e:
             print(f"Failed to import backend {module_name}: {e}")
 
-    return backends
-
-
-# get userdata from database
-def get_userdata(user_id):
-    with sqlite3.connect('userdata.db') as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM userdata WHERE users = ?", (user_id,))
-        userdata = cursor.fetchone()
-        return userdata
-    
+    return backends    
 
 
 class Song:

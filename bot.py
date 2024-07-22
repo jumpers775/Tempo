@@ -12,11 +12,6 @@ import aiohttp
 version = "2.0.0"
 
 
-    
-
-
-
-
 
 # set intents
 intents = discord.Intents.default()
@@ -24,17 +19,14 @@ intents.message_content = True
 intents.members = True
 
 
-
-
-
 # make the bot
 bot = commands.Bot(command_prefix = '$',intents=intents, activity=discord.Game(name='Play some music!'))
-bot.settings = libTempo.load_settings(bot, version)
+bot.settings = libTempo.load_settings(version)
 bot.backends = libTempo.import_backends("Backends/Music")
 
 
 #update checks
-ownerupdated = False
+bot.ownerupdated = False
 @tasks.loop(hours=1)
 async def updatecheck():
     async with aiohttp.ClientSession() as session:
@@ -45,11 +37,12 @@ async def updatecheck():
             currentversion = int("".join(version.split("."))) 
             if newestversion > currentversion:
                 print(f"Update Available!\n{version} --> {latestversion}")
-                if bot.settings["updateDM"] and (not ownerupdated or updateversion != newestversion):
+                if bot.settings["updateDM"] and (not bot.ownerupdated or updateversion != newestversion):
                     updateversion = newestversion
                     app_info = await bot.application_info()
+                    bot.ownerupdated = True
                     user = bot.get_user(app_info.owner.id)
-                    await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}")
+                    await user.send(f"Update Available!\n{version} --> {newestversion}\n {resp['html_url']}\n\n To update, run `git pull`, then `conda env update -f environment.yml`.")
 
 @bot.event
 async def on_ready():
@@ -292,7 +285,7 @@ bot.tree.add_command(deauth)
 
 @discord.app_commands.command(name='setplatform', description='sets a users preferred platform')
 async def setplatform(interaction: discord.Interaction, platform:str):
-    if platform not in bot.backends:
+    if platform not in bot.backends and platform != "default":
         await interaction.response.send_message("Invalid platform.")
         return
     set = libTempo.setuserplatform(interaction.user.id, platform)
@@ -306,12 +299,72 @@ async def shuffle_autocomplete(
     current: str,
 ) -> typing.List[discord.app_commands.Choice[str]]:
     platforms = list(bot.backends.keys())
+    platforms.insert(0, "default")
     return [
         discord.app_commands.Choice(name=platform, value=platform)
         for platform in platforms if current.lower() in platform.lower()
     ]
 bot.tree.add_command(setplatform)
 
+
+
+@discord.app_commands.command(name='settings', description='Shows the current settings')
+@commands.has_permissions(administrator=True)
+async def settings(interaction: discord.Interaction):
+    embed = discord.Embed(title="Current Settings", color=0x00ff00)
+    for key, value in bot.settings.items():
+        if key not in ["Key"]: # don't show the key
+            embed.add_field(name=key, value=value, inline=False)
+    await interaction.response.send_message(embed=embed)
+bot.tree.add_command(settings)
+
+
+@discord.app_commands.command(name='setsetting', description='Sets a setting')
+@commands.has_permissions(administrator=True)
+async def setsetting(interaction: discord.Interaction, setting:str, value:str):
+    if setting not in bot.settings or setting == "Key":
+        await interaction.response.send_message("Invalid setting.")
+        return
+    if setting.lower() == "voice":
+        await interaction.response.send_message("Voice is currently disabled, wait for a future update to enable it.")
+        return
+    try:
+        if setting in ["Voice", "updateDM"]:
+            value = bool(value)
+    except:
+        await interaction.response.send_message("Invalid value.")
+        return
+    bot.settings[setting] = value
+    settings = bot.settings
+    settings[setting] = value
+    libTempo.saveuserdata(0, settings)
+    await interaction.response.send_message(f"Set {setting} to {value}. A restart is required to apply changes.")
+@setsetting.autocomplete('setting')
+async def shuffle_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> typing.List[discord.app_commands.Choice[str]]:
+    settings = list(bot.settings.keys())
+    settings.remove("Key")
+    return [
+        discord.app_commands.Choice(name=setting, value=setting)
+        for setting in settings if current.lower() in setting.lower()
+    ]
+
+bot.tree.add_command(setsetting)
+
+
+@discord.app_commands.command(name='move', description='moves songs in the queue')
+async def move(interaction: discord.Interaction, start:int, end:int):
+    if bot.players[interaction.guild.id].active == False:
+        await interaction.response.send_message("There is no music playing.")
+        return
+    if start < 1 or end < 1 or start > len(bot.players[interaction.guild.id].playlist) or end > len(bot.players[interaction.guild.id].playlist):
+        await interaction.response.send_message("Invalid position.")
+        return
+    bot.players[interaction.guild.id].playlist.move(start-1, end-1)
+    await interaction.response.send_message(f"Moved song from position {start} to {end}.")   
+bot.tree.add_command(move)
 
 dotenv.load_dotenv()
 try:

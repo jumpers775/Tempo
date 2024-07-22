@@ -5,8 +5,7 @@
 
 V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The following is planned:
 
-- [ ] Modularity (using cogs)
-- [ ] Plugins
+- [X] Plugins
     - Each platform will be a plugin
           - This means more platforms can be supported easily
     - There will be a plugin API for custom plugins
@@ -16,10 +15,10 @@ V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The
     - User will be able to configure which models are in use
     - Fully disableable
     - Must be runnable on a Rasberry pi 5 with 8GB of ram
-- [ ] Native playlist support
+- [X] Native playlist support
       - This must include the ability to access playlists on supported platforms
 - [ ] Update utility within the bot (will require owner to press a button)
-- [ ] Nicer UX
+- [X] Nicer UX
 
 ## Useage
 To use this bot, first install [miniconda](https://docs.anaconda.com/miniconda/), then run the following commands:
