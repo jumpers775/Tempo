@@ -3,7 +3,7 @@
 
 ## Info on V2
 
-V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The following is planned:
+V2 of this bot is a complete rewrite of the bot. The following is planned:
 
 - [X] Plugins
     - Each platform will be a plugin
@@ -16,19 +16,20 @@ V2 of this bot is an ambitious (mostly) rewrite, and it will take some time. The
     - Fully disableable
     - Must be runnable on a Rasberry pi 5 with 8GB of ram
 - [X] Native playlist support
-      - This must include the ability to access playlists on supported platforms
+- [ ] Platform playlist support (spotify, youtube, etc)
 - [ ] Update utility within the bot (will require owner to press a button)
 - [X] Nicer UX
 
-## Useage
-To use this bot, first install [miniconda](https://docs.anaconda.com/miniconda/), then run the following commands:
+## Useage 
+
+To use this bot, first install [miniconda](https://docs.anaconda.com/miniconda/) and espeak, then run the following commands:
 
 ```sh
 $ conda env create -f /path/to/Tempo/environment.yml
 $ conda activate Tempo
 $ python bot.py
 ```
-The bot will then prompt you for a token. Supply your bot token to it and it will run. Add it to your servers, then run `$sync` to enable the slash commands within discords UI.
+The bot will then prompt you for a token. Supply your bot token to it and it will run. Add it to your servers, then run `$sync` to enable the slash commands within discords UI. More detailed setup information will be included with each release.
 
 ## Updating
 
@@ -51,8 +52,7 @@ While additional platforms can be easily added, this bot features the following 
 - [X] Pause support
 - [X] Loop support
 - [X] Inbuilt playlists
-- [ ] Spotify playlists
-- [ ] YT playlists
+- [ ] platform playlists
 - [ ] Voice commands
 - [ ] account sharing for paid platforms
 
